@@ -1,0 +1,520 @@
+import 'package:farmers_admin/models/working_status.dart';
+import 'package:farmers_admin/screens/dashboard/dashboard.dart';
+import 'package:flutter/material.dart';
+import 'package:firebase_database/firebase_database.dart';
+import '../../common/app_header.dart';
+import '../../common/side_menu.dart';
+
+class EditWorkingStatusScreen extends StatefulWidget {
+  final WorkingStatus status;
+  const EditWorkingStatusScreen({super.key, required this.status});
+
+  @override
+  State<EditWorkingStatusScreen> createState() => _EditWorkingStatusScreenState();
+}
+
+class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
+  final _formKey = GlobalKey<FormState>();
+  late DatabaseReference _dbRef;
+
+  // Controllers
+  late TextEditingController _titleController;
+  late TextEditingController _detailsController;
+
+  late bool _isEnableButton;
+  late bool _isSomethingWrong;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final status = widget.status;
+    final statusId = status.statusId;
+    _dbRef = FirebaseDatabase.instance.ref().child('workingStatus/$statusId');
+
+    _titleController = TextEditingController(text: status.workingTitle ?? '');
+    _detailsController = TextEditingController(text: status.workingDetails ?? '');
+    _isEnableButton = status.isEnableButton;
+    _isSomethingWrong = status.isSomethingWrong;
+  }
+
+  Future<void> _updateWorkingStatus() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final updatedData = {
+        "workingTitle": _titleController.text.trim(),
+        "workingDetails": _detailsController.text.trim(),
+        "isEnableButton": _isEnableButton,
+        "isSomethingWrong": _isSomethingWrong,
+        "updatedAt": DateTime.now().millisecondsSinceEpoch,
+      };
+
+      await _dbRef.update(updatedData).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Connection timeout. Please check your internet connection.');
+        },
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Working status updated successfully!"),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) {
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+
+      if (!mounted) return;
+
+      String errorMessage = "Failed to update working status. ";
+
+      if (e.toString().contains('timeout') ||
+          e.toString().contains('network') ||
+          e.toString().contains('connection')) {
+        errorMessage += "Please check your internet connection and try again.";
+      } else if (e.toString().contains('permission')) {
+        errorMessage += "You don't have permission to update this working status.";
+      } else {
+        errorMessage += "Please try again later.";
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'Retry',
+            textColor: Colors.white,
+            onPressed: _updateWorkingStatus,
+          ),
+        ),
+      );
+
+      debugPrint('Error updating working status: $e');
+    }
+  }
+
+  Widget _buildTextField({
+    required String label,
+    required TextEditingController controller,
+    String? Function(String?)? validator,
+    int maxLines = 1,
+    TextInputType? keyboardType,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(
+                fontSize: 14, fontWeight: FontWeight.w500, color: Colors.black)),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          validator: validator,
+          keyboardType: keyboardType,
+          maxLines: maxLines,
+          enabled: !_isLoading,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Colors.grey[50],
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey[300]!),
+            ),
+            focusedBorder: const OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.green, width: 2),
+            ),
+            contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSwitchField({
+    required String label,
+    required bool value,
+    required void Function(bool) onChanged,
+    String? subtitle,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(width: 1, color: Colors.black54),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                if (subtitle != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          GestureDetector(
+            onTap: _isLoading ? null : () => onChanged(!value),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              width: 60,
+              height: 32,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                color: value ? Colors.green : Colors.grey[300],
+              ),
+              child: Stack(
+                children: [
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    left: value ? 8 : null,
+                    right: value ? null : 8,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: Text(
+                        value ? 'ON' : 'OFF',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: value ? Colors.white : Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                  ),
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    left: value ? 32 : 4,
+                    top: 4,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.2),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SideMenu(
+            selectedIndex: 6, // Current screen index
+            onItemTapped: (index) {
+              // Navigate back to dashboard with selected index
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (context) => DashboardScreen(initialIndex: 0),
+                ),
+              );
+            },
+          ),
+
+          Expanded(
+            flex: 3,
+            child: SingleChildScrollView(
+              child: Center(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const AppHeader(),
+                    Container(
+                      padding: const EdgeInsets.all(30),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.arrow_back,
+                                            color: Colors.black),
+                                        onPressed: _isLoading
+                                            ? null
+                                            : () {
+                                          Navigator.pop(context);
+                                        },
+                                      ),
+                                      Text(
+                                        "Edit Working Status",
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .headlineLarge
+                                            ?.copyWith(
+                                          color: Colors.black,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    "Dashboard / Working Status List / Edit Working Status",
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 30),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded( flex: 3, child: Container(
+                                padding: const EdgeInsets.all(24),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  color: Colors.white,
+                                ),
+                                child: Form(
+                                  key: _formKey,
+                                  child: Column(
+                                    children: [
+                                      _buildTextField(
+                                        label: "Working Title*",
+                                        controller: _titleController,
+                                        validator: (v) => v!.isEmpty
+                                            ? "Enter working title"
+                                            : null,
+                                      ),
+                                      const SizedBox(height: 20),
+                                      _buildTextField(
+                                        label: "Working Details*",
+                                        controller: _detailsController,
+                                        maxLines: 4,
+                                        validator: (v) => v!.isEmpty
+                                            ? "Enter working details"
+                                            : null,
+                                      ),
+                                      const SizedBox(height: 20),
+                                      Row(
+                                       children: [
+
+                                         Expanded(
+                                           child: _buildSwitchField(
+                                             label: "Enable Button",
+                                             subtitle:
+                                             "Enable or disable the button functionality",
+                                             value: _isEnableButton,
+                                             onChanged: (val) {
+                                               setState(() {
+                                                 _isEnableButton = val;
+                                               });
+                                             },
+                                           ),
+                                         ),
+                                         const SizedBox(width: 20),
+                                         Expanded(
+                                           child: _buildSwitchField(
+                                             label: "Something Wrong",
+                                             subtitle:
+                                             "Indicate if there's an issue or error",
+                                             value: _isSomethingWrong,
+                                             onChanged: (val) {
+                                               setState(() {
+                                                 _isSomethingWrong = val;
+                                               });
+                                             },
+                                           ),
+                                         ),
+
+                                       ],
+                                     ),
+                                      const SizedBox(height: 20),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: OutlinedButton(
+                                              onPressed: _isLoading
+                                                  ? null
+                                                  : () => Navigator.pop(context),
+                                              style: OutlinedButton.styleFrom(
+                                                padding: const EdgeInsets.symmetric(
+                                                    vertical: 16),
+                                                side: BorderSide(
+                                                    color: Colors.grey[400]!),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                  BorderRadius.circular(8),
+                                                ),
+                                              ),
+                                              child: const Text(
+                                                "CANCEL",
+                                                style: TextStyle(
+                                                  color: Colors.black54,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: ElevatedButton(
+                                              onPressed: _isLoading
+                                                  ? null
+                                                  : _updateWorkingStatus,
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: Colors.green,
+                                                padding: const EdgeInsets.symmetric(
+                                                    vertical: 16),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                  BorderRadius.circular(8),
+                                                ),
+                                              ),
+                                              child: _isLoading
+                                                  ? const SizedBox(
+                                                height: 20,
+                                                width: 20,
+                                                child:
+                                                CircularProgressIndicator(
+                                                  color: Colors.white,
+                                                  strokeWidth: 2,
+                                                ),
+                                              )
+                                                  : const Text(
+                                                "SAVE CHANGES",
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              ),
+                              Expanded(
+                                flex: 1,
+                                child: Column(
+                                  children: [
+                                    SizedBox(height: 10,),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: _buildImagePreview(),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                ),
+                              ),
+
+                            ],
+                          )
+                        ],
+                      ),
+                    )
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  Widget _buildImagePreview() {
+    // Placeholder when no image
+    return Container(
+      height: 200,
+      width: 200,
+      color: Colors.grey[300],
+      child: Center(
+        child: Image.asset(
+          "images/profile.jpg",
+          width: 200,
+          height: 200,
+          fit: BoxFit.cover,
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _detailsController.dispose();
+    super.dispose();
+  }
+}

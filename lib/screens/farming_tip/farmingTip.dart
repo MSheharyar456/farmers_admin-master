@@ -1,0 +1,939 @@
+import 'dart:async';
+import 'package:farmers_admin/common/app_header.dart';
+import 'package:farmers_admin/models/farming_tip_model.dart';
+import 'package:farmers_admin/screens/farming_tip/add_farm_tip.dart';
+import 'package:farmers_admin/screens/farming_tip/edit_farm_tip.dart';
+import 'package:farmers_admin/widgets/delete_dialog.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:pluto_grid/pluto_grid.dart';
+
+class FarmingTipManagementScreen extends StatefulWidget {
+  const FarmingTipManagementScreen({super.key});
+
+  @override
+  State<FarmingTipManagementScreen> createState() => _FarmingTipManagementScreenState();
+}
+
+class _FarmingTipManagementScreenState extends State<FarmingTipManagementScreen> {
+  late PlutoGridStateManager stateManager;
+  late DatabaseReference _dbRef;
+  List<FarmingTip> _tips = [];
+  StreamSubscription<DatabaseEvent>? _tipsSubscription;
+  bool _isGridLoaded = false;
+  bool _isLoading = true;
+  final double rowHeight = 45;
+  final double headerHeight = 50;
+
+  String _searchQuery = '';
+  int _currentPage = 1;
+  int _rowsPerPage = 10;
+
+  List<FarmingTip> get _filteredTips => _tips.where(_matchesFilters).toList();
+  int get totalPages => (_filteredTips.length / _rowsPerPage).ceil();
+
+  List<FarmingTip> get _paginatedTips {
+    final startIndex = (_currentPage - 1) * _rowsPerPage;
+    final endIndex = startIndex + _rowsPerPage;
+    return _filteredTips.sublist(
+      startIndex,
+      endIndex > _filteredTips.length ? _filteredTips.length : endIndex,
+    );
+  }
+
+  List<PlutoColumn> _getColumns() {
+    return [
+      PlutoColumn(
+        title: '#',
+        field: 'numbering',
+        type: PlutoColumnType.text(),
+        enableEditingMode: false,
+        width: 60,
+        minWidth: 40,
+      ),
+      PlutoColumn(
+        title: 'Tip ID',
+        field: 'id',
+        type: PlutoColumnType.text(),
+        enableEditingMode: false,
+        width: 120,
+        minWidth: 100,
+      ),
+      PlutoColumn(
+        title: 'English Tip',
+        field: 'tip_english',
+        type: PlutoColumnType.text(),
+        enableEditingMode: false,
+        width: 250,
+        minWidth: 200,
+      ),
+      PlutoColumn(
+        title: 'Arabic Tip',
+        field: 'tip_arabic',
+        type: PlutoColumnType.text(),
+        enableEditingMode: false,
+        width: 250,
+        minWidth: 200,
+      ),
+      PlutoColumn(
+        title: 'German Tip',
+        field: 'tip_german',
+        type: PlutoColumnType.text(),
+        enableEditingMode: false,
+        width: 250,
+        minWidth: 200,
+      ),
+      PlutoColumn(
+        title: 'Turkish Tip',
+        field: 'tip_turkish',
+        type: PlutoColumnType.text(),
+        enableEditingMode: false,
+        width: 250,
+        minWidth: 200,
+      ),
+      PlutoColumn(
+        title: 'Actions',
+        field: 'actions',
+        type: PlutoColumnType.text(),
+        enableEditingMode: false,
+        width: 120,
+        minWidth: 100,
+        renderer: (rendererContext) {
+          final tipId = rendererContext.row.cells['id']!.value;
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                height: 30,
+                width: 30,
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: IconButton(
+                  icon: SvgPicture.asset(
+                    'images/ic_farm_edit.svg',
+                    width: 20,
+                    height: 20,
+                    color: Colors.blue,
+                  ),
+                  tooltip: 'Edit Tip',
+                  splashRadius: 20,
+                  onPressed: () {
+                    try {
+                      final tip = _tips.firstWhere((t) => t.tipId == tipId);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => EditFarmingTipScreen(tip: tip),
+                        ),
+                      );
+
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Error: Could not find tip with ID $tipId')),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                height: 30,
+                width: 30,
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: IconButton(
+                  icon: SvgPicture.asset(
+                    'images/ic_farm_trash.svg',
+                    width: 20,
+                    height: 20,
+                    color: Colors.red,
+                  ),
+                  tooltip: 'Delete Tip',
+                  splashRadius: 20,
+                  onPressed: () async {
+                    await showDeleteDialog(
+                      context: context,
+                      title: "Delete Farming Tip",
+                      message: "Are you sure you want to delete this farming tip?",
+                      onConfirm: () async {
+                        await FirebaseDatabase.instance.ref('farminTipOfDay/$tipId').remove();
+                        setState(() {});
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    ];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _dbRef = FirebaseDatabase.instance.ref().child('farminTipOfDay');
+    _listenForTips();
+  }
+
+  void _listenForTips() {
+    _tipsSubscription = _dbRef.onValue.listen((DatabaseEvent event) {
+      if (!mounted) return;
+
+      if (_isLoading) {
+        setState(() => _isLoading = false);
+      }
+
+      if (event.snapshot.value != null) {
+        final rawData = event.snapshot.value;
+        final List<FarmingTip> loadedTips = [];
+
+        // Check if data is a Map
+        if (rawData is Map<dynamic, dynamic>) {
+          // Check if this is a nested structure (multiple tips) or flat structure (single tip)
+          bool hasNestedTips = rawData.values.any((value) => value is Map &&
+              (value.containsKey('farmingTipEnglish') ||
+                  value.containsKey('farmingTipArabic')));
+
+          if (hasNestedTips) {
+            // Nested structure: multiple tips with keys
+            rawData.forEach((key, value) {
+              if (value is Map) {
+                final tipMap = Map<dynamic, dynamic>.from(value);
+                loadedTips.add(FarmingTip.fromMap(key.toString(), tipMap));
+              }
+            });
+          } else if (rawData.containsKey('farmingTipEnglish') ||
+              rawData.containsKey('farmingTipArabic')) {
+            // Flat structure: single tip without key
+            loadedTips.add(FarmingTip.fromMap('default', rawData));
+          } else {
+            // Unknown structure, try to handle as nested anyway
+            rawData.forEach((key, value) {
+              if (value is Map) {
+                final tipMap = Map<dynamic, dynamic>.from(value);
+                loadedTips.add(FarmingTip.fromMap(key.toString(), tipMap));
+              }
+            });
+          }
+        }
+
+        setState(() {
+          _tips = loadedTips;
+        });
+        if (_isGridLoaded) _updatePlutoGridRows();
+      } else {
+        setState(() => _tips = []);
+        if (_isGridLoaded) _updatePlutoGridRows();
+      }
+    });
+  }
+
+  bool _matchesFilters(FarmingTip tip) {
+    if (_searchQuery.isNotEmpty) {
+      final english = tip.farmingTipEnglish?.toLowerCase() ?? '';
+      final arabic = tip.farmingTipArabic?.toLowerCase() ?? '';
+      final german = tip.farmingTipGerman?.toLowerCase() ?? '';
+      final turkish = tip.farmingTipTurkish?.toLowerCase() ?? '';
+
+      if (!english.contains(_searchQuery) &&
+          !arabic.contains(_searchQuery) &&
+          !german.contains(_searchQuery) &&
+          !turkish.contains(_searchQuery)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void _updatePlutoGridRows() {
+    final newRows = <PlutoRow>[];
+    int counter = 1;
+
+    for (final tip in _paginatedTips) {
+      newRows.add(
+        PlutoRow(
+          cells: {
+            'numbering': PlutoCell(value: counter.toString()),
+            'id': PlutoCell(value: tip.tipId ?? ''),
+            'tip_english': PlutoCell(value: tip.farmingTipEnglish ?? ''),
+            'tip_arabic': PlutoCell(value: tip.farmingTipArabic ?? ''),
+            'tip_german': PlutoCell(value: tip.farmingTipGerman ?? ''),
+            'tip_turkish': PlutoCell(value: tip.farmingTipTurkish ?? ''),
+            'actions': PlutoCell(value: ''),
+          },
+        ),
+      );
+      counter++;
+    }
+
+    stateManager.removeAllRows();
+    if (newRows.isNotEmpty) stateManager.appendRows(newRows);
+  }
+
+  @override
+  void dispose() {
+    _tipsSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _applyFilters() {
+    setState(() {
+      _currentPage = 1; // Reset to first page when filters change
+      if (_isGridLoaded) _updatePlutoGridRows();
+    });
+  }
+
+  Widget _buildEmptyState() {
+    final hasFilters = _searchQuery.isNotEmpty;
+
+    if (hasFilters && _tips.isNotEmpty) {
+      return _buildNoResultsState();
+    }
+
+    return SizedBox(
+      height: 500,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400, maxHeight: 250),
+                child: Image.asset(
+                  'images/image_farm_nothing_remains.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                "No farming tips available",
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "Add your first farming tip to get started",
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoResultsState() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 768;
+
+    return SizedBox(
+      height: 400,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(
+              'images/image_farm_nothing_remains.png',
+              height: isMobile ? 120 : 150,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              "You're all caught up!",
+              style: TextStyle(
+                fontSize: isMobile ? 18 : 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "No farming tips found",
+              style: TextStyle(
+                fontSize: isMobile ? 14 : 16,
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isTablet = screenWidth >= 768 && screenWidth < 1024;
+    final isMobile = screenWidth < 768;
+    final isDesktop = screenWidth >= 1024;
+
+    return Scaffold(
+      body: Column(
+        children: [
+          const AppHeader(),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.vertical,
+              child: Container(
+                padding: EdgeInsets.all(isMobile ? 12 : 15),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header Section
+                    isMobile
+                        ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Farming Tips',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineMedium
+                                  ?.copyWith(
+                                color: Colors.black,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "Dashboard / Farming Tips List",
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (context) =>
+                                    const AddFarmingTipScreen()),
+                              );
+                            },
+                            icon: const Icon(Icons.add,
+                                color: Colors.white),
+                            label: const Text("Add Farming Tip",
+                                style: TextStyle(color: Colors.white)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                        : Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Farming Tips',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineLarge
+                                  ?.copyWith(
+                                color: Colors.black,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              "Dashboard / Farming Tips List",
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (context) =>
+                                  const AddFarmingTipScreen()),
+                            );
+                          },
+                          icon:
+                          const Icon(Icons.add, color: Colors.white),
+                          label: const Text("Add Farming Tip",
+                              style: TextStyle(color: Colors.white)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 20),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Filters Section
+                    isMobile
+                        ? Column(
+                      children: [
+                        TextField(
+                          decoration: InputDecoration(
+                            hintText: 'Search...',
+                            prefixIcon: const Icon(Icons.search),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            focusedBorder: const OutlineInputBorder(
+                              borderSide: BorderSide(
+                                  color: Colors.green, width: 2),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                          ),
+                          onChanged: (val) {
+                            setState(() {
+                              _searchQuery = val.toLowerCase();
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _applyFilters,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SvgPicture.asset(
+                                  'images/ic_farm_filter.svg',
+                                  height: 20,
+                                  width: 20,
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  "APPLY FILTERS",
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                        : Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: SizedBox(
+                            width: isTablet ? 200 : 300,
+                            child: TextField(
+                              decoration: InputDecoration(
+                                hintText: 'Search...',
+                                prefixIcon: const Icon(Icons.search),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                focusedBorder: const OutlineInputBorder(
+                                  borderSide: BorderSide(
+                                      color: Colors.green, width: 2),
+                                ),
+                                contentPadding:
+                                const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                              ),
+                              onChanged: (val) {
+                                setState(() {
+                                  _searchQuery = val.toLowerCase();
+                                  _currentPage = 1; // Reset page on search
+                                  if (_isGridLoaded) _updatePlutoGridRows();
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 1,
+                          child: ElevatedButton(
+                            onPressed: _applyFilters,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 20),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SvgPicture.asset(
+                                  'images/ic_farm_filter.svg',
+                                  height: 20,
+                                  width: 20,
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  "APPLY FILTERS",
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Grid Section
+                    SizedBox(
+                      child: _isLoading
+                          ? const Center(
+                          child: CircularProgressIndicator(
+                              color: Colors.green))
+                          : _tips.isEmpty
+                          ? _buildEmptyState()
+                          : _filteredTips.isEmpty
+                          ? _buildNoResultsState()
+                          : Container(
+                        color: Colors.white,
+                        height: (_paginatedTips.length * rowHeight) +
+                            headerHeight + 10, // Added padding
+                        child: PlutoGrid(
+                          columns: _getColumns(),
+                          rows: [],
+                          onLoaded: (event) {
+                            stateManager = event.stateManager;
+                            stateManager.setShowColumnFilter(false);
+                            setState(() => _isGridLoaded = true);
+                            if (_tips.isNotEmpty)
+                              _updatePlutoGridRows();
+                          },
+                          configuration: PlutoGridConfiguration(
+                            columnSize:
+                            const PlutoGridColumnSizeConfig(
+                              autoSizeMode: PlutoAutoSizeMode.scale,
+                            ),
+                            style: PlutoGridStyleConfig(
+                              rowHeight: 45,
+                              columnTextStyle: const TextStyle(
+                                  fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Pagination Footer
+                    if (!_isLoading && _filteredTips.isNotEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.symmetric(
+                          vertical: isMobile ? 12 : 16,
+                          horizontal: isMobile ? 4 : 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.05),
+                              blurRadius: 5,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: isMobile
+                            ? Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(
+                                      Icons.arrow_back_ios_new,
+                                      size: 16,
+                                      color: Colors.grey),
+                                  onPressed: _currentPage > 1
+                                      ? () {
+                                    setState(() {
+                                      _currentPage--;
+                                      _updatePlutoGridRows();
+                                    });
+                                  }
+                                      : null,
+                                ),
+                                Text(
+                                  '$_currentPage / $totalPages',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                      Icons.arrow_forward_ios,
+                                      size: 16,
+                                      color: Colors.grey),
+                                  onPressed: _currentPage < totalPages
+                                      ? () {
+                                    setState(() {
+                                      _currentPage++;
+                                      _updatePlutoGridRows();
+                                    });
+                                  }
+                                      : null,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Container(
+                                  height: 34,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                        color: Colors.grey.shade300),
+                                    borderRadius:
+                                    BorderRadius.circular(6),
+                                    color: Colors.white,
+                                  ),
+                                  child: DropdownButtonHideUnderline(
+                                    child: DropdownButton<int>(
+                                      value: _rowsPerPage,
+                                      dropdownColor: Colors.white,
+                                      icon: const Icon(
+                                          Icons.keyboard_arrow_down,
+                                          size: 18),
+                                      items: [5, 10, 20, 50]
+                                          .map((e) => DropdownMenuItem(
+                                        value: e,
+                                        child: Text('$e'),
+                                      ))
+                                          .toList(),
+                                      onChanged: (val) {
+                                        if (val != null) {
+                                          setState(() {
+                                            _rowsPerPage = val;
+                                            _currentPage = 1;
+                                            _updatePlutoGridRows();
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  "/ Page",
+                                  style: TextStyle(
+                                    color: Colors.black54,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        )
+                            : Wrap(
+                          alignment: WrapAlignment.start,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.arrow_back_ios_new,
+                                  size: 16, color: Colors.grey),
+                              onPressed: _currentPage > 1
+                                  ? () {
+                                setState(() {
+                                  _currentPage--;
+                                  _updatePlutoGridRows();
+                                });
+                              }
+                                  : null,
+                            ),
+                            ...List.generate(
+                              totalPages > 7 ? 7 : totalPages,
+                                  (index) {
+                                int pageNum;
+                                if (totalPages <= 7) {
+                                  pageNum = index + 1;
+                                } else {
+                                  if (_currentPage <= 4) {
+                                    pageNum = index + 1;
+                                  } else if (_currentPage >=
+                                      totalPages - 3) {
+                                    pageNum = totalPages - 6 + index;
+                                  } else {
+                                    pageNum = _currentPage - 3 + index;
+                                  }
+                                }
+
+                                final isActive = pageNum == _currentPage;
+
+                                return GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _currentPage = pageNum;
+                                      _updatePlutoGridRows();
+                                    });
+                                  },
+                                  child: Container(
+                                    margin: const EdgeInsets.symmetric(
+                                        horizontal: 2),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: isActive
+                                          ? const Color(0xFFE8F5E9)
+                                          : Colors.white,
+                                      border: Border.all(
+                                        color: isActive
+                                            ? const Color(0xFF4CAF50)
+                                            : Colors.grey.shade300,
+                                      ),
+                                      borderRadius:
+                                      BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '$pageNum',
+                                      style: TextStyle(
+                                        color: isActive
+                                            ? const Color(0xFF4CAF50)
+                                            : Colors.black87,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.arrow_forward_ios,
+                                  size: 16, color: Colors.grey),
+                              onPressed: _currentPage < totalPages
+                                  ? () {
+                                setState(() {
+                                  _currentPage++;
+                                  _updatePlutoGridRows();
+                                });
+                              }
+                                  : null,
+                            ),
+                            const SizedBox(width: 12),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  height: 34,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                        color: Colors.grey.shade300),
+                                    borderRadius:
+                                    BorderRadius.circular(6),
+                                    color: Colors.white,
+                                  ),
+                                  child: DropdownButtonHideUnderline(
+                                    child: DropdownButton<int>(
+                                      value: _rowsPerPage,
+                                      icon: const Icon(
+                                          Icons.keyboard_arrow_down,
+                                          size: 18),
+                                      items: [5, 10, 20, 50]
+                                          .map((e) => DropdownMenuItem(
+                                        value: e,
+                                        child: Text('$e'),
+                                      ))
+                                          .toList(),
+                                      onChanged: (val) {
+                                        if (val != null) {
+                                          setState(() {
+                                            _rowsPerPage = val;
+                                            _currentPage = 1;
+                                            _updatePlutoGridRows();
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  "/ Page",
+                                  style: TextStyle(
+                                    color: Colors.black54,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "611277588462",
+    "firebase_url": "https://testing-79c4f-default-rtdb.firebaseio.com",
+    "project_id": "testing-79c4f",
+    "storage_bucket": "testing-79c4f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:611277588462:android:dce16489549a9e57a5b0ff",
+        "android_client_info": {
+          "package_name": "com.example.farmers_admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCWUyA6YRSSPV8WatzlbxOBqznN1LUHBNI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
