@@ -7,23 +7,22 @@ class Post {
   final String postLocation;
   final String postCategory;
   final bool postUserVerified;
-  final int postAge;
+  final double postAge;
   final double postPrice;
 
-  // Weight-related fields - handle both old and new structure
-  final dynamic postAverageWeight;
+  // Weight-related fields
+  final double postAverageWeight;
   final String? postWeightCategory;
-  final int? postQuantity;
-  final String? postWeight; // New field for direct weight storage
+  final double postQuantity;
+  final double postWeight;
 
-  // Additional fields to match Firebase structure
-  final int? postDate;
-  final int? createdAt;
-  final int? updatedAt;
+  // Date stored as Long in Firebase → int in Dart
+  final int postDate;
+
   final bool postIsApproved;
   final List<String> postImages;
 
-  // New boolean fields for post management
+  // Post management flags
   final bool postIsFeatured;
   final bool postIsHomePost;
   final bool postIsLiked;
@@ -31,19 +30,42 @@ class Post {
   final bool postIsSold;
   final bool postIsTop;
   final bool postIsUpdate;
-  final bool postIsCancelled; // ✅ NEW FIELD ADDED
+  final bool postCancelApproved;
+  final bool postIsCancelled;
+
+  // NEW FIELDS
+  final int postNoLikes;
+  final int postLimits;
+  final int postIsColoredTimes;
+  final int postTopTime;
+  final int? postIsHomePostTimes;
+  final int? postPutTopTime;
+
+  final int? postIsColoredExpiry;
+  final int? postIsTopExpiry;
+  final int? postIsHomePostExpiry;
+  final int? postIsPutTopExpiry;
 
   // Category-specific fields
   final String? postAdditionalDetails;
-  final String? postArea; // For irrigation, land services
-  final int? postLiquidQuantity; // For olive oils, others
-  final String? postLiveStockCategory; // For livestock (cow, sheep, goat, etc.)
-  final String? postServiceType; // For equipments, agriculture, etc. (sell/rent)
-  final String? postOliveOilType; // For olive&oils (olive/oil/both)
-  final String? postFertilizerType; // For fertilizers (organic/chemical/mixed)
-  final String? postSystemType; // For irrigation system (drip/sprinkler/surface)
+  final double postArea;
+  final double postLiquidQuantity;
+  final String? postLiveStockCategory;
+  final String? postServiceType;
+  final String? postBarCode;
 
-  Post({
+  // User-related fields
+  final String postUserContact;
+  final String postUserId;
+  final String postUserImage;
+  final String postUserLocation;
+  final int postUserLoginDate;
+  final String postUserMail;
+  final String postUserName;
+  final int postViews;
+  final String postUserImageColor;
+
+  const Post({
     required this.postId,
     required this.postTitle,
     required this.postGender,
@@ -54,13 +76,11 @@ class Post {
     required this.postUserVerified,
     required this.postAge,
     required this.postPrice,
-    this.postAverageWeight,
+    required this.postAverageWeight,
     this.postWeightCategory,
-    this.postQuantity,
-    this.postWeight,
-    this.postDate,
-    this.createdAt,
-    this.updatedAt,
+    required this.postQuantity,
+    required this.postWeight,
+    required this.postDate,
     this.postIsApproved = false,
     this.postImages = const [],
     this.postIsFeatured = false,
@@ -70,42 +90,58 @@ class Post {
     this.postIsSold = false,
     this.postIsTop = false,
     this.postIsUpdate = false,
-    this.postIsCancelled = false, // ✅ NEW FIELD ADDED
-    // Category-specific fields
+    this.postCancelApproved = false,
+    this.postIsCancelled = false,
     this.postAdditionalDetails,
-    this.postArea,
-    this.postLiquidQuantity,
+    required this.postArea,
+    required this.postLiquidQuantity,
     this.postLiveStockCategory,
     this.postServiceType,
-    this.postOliveOilType,
-    this.postFertilizerType,
-    this.postSystemType,
+    required this.postBarCode,
+
+    // User-related fields
+    required this.postUserContact,
+    required this.postUserId,
+    required this.postUserImage,
+    required this.postUserLocation,
+    required this.postUserLoginDate,
+    required this.postUserMail,
+    required this.postUserName,
+    this.postViews = 0,
+
+    // NEW FIELDS
+    this.postNoLikes = 0,
+    this.postLimits = 0,
+    this.postIsColoredTimes = 0,
+    this.postTopTime = 0,
+    this.postIsHomePostTimes,
+    this.postPutTopTime,
+    this.postIsColoredExpiry,
+    this.postIsTopExpiry,
+    this.postIsHomePostExpiry,
+    this.postIsPutTopExpiry,
+    this.postUserImageColor = '#cccccc',
   });
 
-  // Computed property to create a display string for weight
+  /// Display weight intelligently
   String get displayWeight {
-    // Try postWeight first (new structure)
-    if (postWeight != null && postWeight!.isNotEmpty && postWeight != '0') {
+    if (postWeight > 0) {
       return '$postWeight KG';
     }
-
-    // Fallback to postAverageWeight (old structure)
-    if (postAverageWeight != null && postAverageWeight.toString().isNotEmpty && postAverageWeight.toString() != '0') {
+    if (postAverageWeight > 0) {
       String weight = '$postAverageWeight';
       if (postWeightCategory != null && postWeightCategory!.isNotEmpty) {
         weight += ' ($postWeightCategory)';
       }
       return '$weight KG';
     }
-
-    // Fallback to quantity if available
-    if (postQuantity != null && postQuantity! > 0) {
+    if (postQuantity > 0) {
       return '$postQuantity items';
     }
-
-    return 'N/A'; // Return N/A if no weight info available
+    return 'N/A';
   }
 
+  /// Factory to build from Firebase map
   factory Post.fromMap(String key, Map<dynamic, dynamic> map) {
     return Post(
       postId: key,
@@ -113,32 +149,20 @@ class Post {
       postGender: map['postGender']?.toString() ?? '',
       postCity: map['postCity']?.toString() ?? '',
       postVillage: map['postVillage']?.toString() ?? '',
-
-      // Handle location mapping - check both possible field names
-      postLocation: map['postLocation']?.toString() ??
-          map['postUserLocation']?.toString() ?? '',
-
+      postLocation:
+          map['postLocation']?.toString() ??
+          map['postUserLocation']?.toString() ??
+          '',
       postCategory: map['postCategory']?.toString() ?? '',
-      postUserVerified: map['postUserVerified'] == true,
-
-      // Handle age - convert string to int safely
-      postAge: _parseToInt(map['postAge']) ?? 0,
-
-      // Handle price - convert to double safely
+      postUserVerified: _parseToBool(map['postUserVerified']) ?? false,
+      postAge: _parseToDouble(map['postAge']) ?? 0.0,
       postPrice: _parseToDouble(map['postPrice']) ?? 0.0,
-
-      // Weight fields - handle both structures
-      postAverageWeight: map['postAverageWeight'],
+      postAverageWeight: _parseToDouble(map['postAverageWeight']) ?? 0.0,
       postWeightCategory: map['postWeightCategory']?.toString(),
-      postQuantity: _parseToInt(map['postQuantity']),
-      postWeight: map['postWeight']?.toString(),
-
-      // Date fields
-      postDate: _parseToInt(map['postDate']),
-      createdAt: _parseToInt(map['createdAt']),
-      updatedAt: _parseToInt(map['updatedAt']),
-
-      // Boolean fields
+      postQuantity: _parseToDouble(map['postQuantity']) ?? 0.0,
+      postWeight: _parseToDouble(map['postWeight']) ?? 0.0,
+      postDate:
+          _parseToInt(map['postDate']) ?? DateTime.now().millisecondsSinceEpoch,
       postIsApproved: map['postIsApproved'] == true,
       postIsFeatured: map['postIsFeatured'] == true,
       postIsHomePost: map['postIsHomePost'] == true,
@@ -147,67 +171,46 @@ class Post {
       postIsSold: map['postIsSold'] == true,
       postIsTop: map['postIsTop'] == true,
       postIsUpdate: map['postIsUpdate'] == true,
-      postIsCancelled: map['postIsCancelled'] == true, // ✅ NEW FIELD ADDED
-
-      // Images field - handle as list with fallback to empty list
+      postCancelApproved: map['postCancelApproved'] == true,
+      postIsCancelled: map['postIsCancelled'] == true,
       postImages: _parseImagesList(map['postImages']),
-
-      // Category-specific fields
       postAdditionalDetails: map['postAdditionalDetails']?.toString(),
-      postArea: map['postArea']?.toString(),
-      postLiquidQuantity: _parseToInt(map['postLiquidQuantity']),
+      postArea: _parseToDouble(map['postArea']) ?? 0.0,
+      postLiquidQuantity: _parseToDouble(map['postLiquidQuantity']) ?? 0.0,
       postLiveStockCategory: map['postLiveStockCategory']?.toString(),
       postServiceType: map['postServiceType']?.toString(),
-      postOliveOilType: map['postOliveOilType']?.toString(),
-      postFertilizerType: map['postFertilizerType']?.toString(),
-      postSystemType: map['postSystemType']?.toString(),
+      postBarCode: map['postBarCode']?.toString() ?? '',
+
+      // User-related
+      postUserContact: map['postUserContact']?.toString() ?? '',
+      postUserId: map['postUserId']?.toString() ?? '',
+      postUserImage: map['postUserImage']?.toString() ?? '',
+      postUserLocation: map['postUserLocation']?.toString() ?? '',
+      postUserLoginDate:
+          _parseToInt(map['postUserLoginDate']) ??
+          DateTime.now().millisecondsSinceEpoch,
+      postUserMail: map['postUserMail']?.toString() ?? '',
+      postUserName: map['postUserName']?.toString() ?? 'Default',
+      postViews: _parseToInt(map['postViews']) ?? 0,
+
+      // NEW FIELDS
+      postNoLikes: _parseToInt(map['postNoLikes']) ?? 0,
+      postLimits: _parseToInt(map['postLimits']) ?? 0,
+      postIsColoredTimes: _parseToInt(map['postIsColoredTimes']) ?? 0,
+      postTopTime: _parseToInt(map['postTopTime']) ?? 0,
+      postIsHomePostTimes: _parseToInt(map['postIsHomePostTimes']),
+      postPutTopTime: _parseToInt(map['postPutTopTime']),
+      postIsColoredExpiry: _parseToInt(map['postIsColoredExpiry']),
+      postIsTopExpiry: _parseToInt(map['postIsTopExpiry']),
+      postIsHomePostExpiry: _parseToInt(map['postIsHomePostExpiry']),
+      postIsPutTopExpiry: _parseToInt(map['postIsPutTopExpiry']),
+      postUserImageColor: map['postUserImageColor']?.toString() ?? '#ffcccccc',
     );
   }
 
-  static List<String> _parseImagesList(dynamic value) {
-    if (value == null) return [];
-
-    // Case 1: Firebase stores postImages as a Map like { "1": "url1", "2": "url2" }
-    if (value is Map) {
-      return value.values.map((e) => e.toString()).toList();
-    }
-
-    // Case 2: Firebase stores as a List
-    if (value is List) {
-      return value.map((item) => item.toString()).toList();
-    }
-
-    // Case 3: Single string (fallback)
-    if (value is String && value.isNotEmpty) {
-      return [value];
-    }
-
-    return [];
-  }
-
-  // Helper method to safely parse integers
-  static int? _parseToInt(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    if (value is String) {
-      return int.tryParse(value);
-    }
-    return null;
-  }
-
-  // Helper method to safely parse doubles
-  static double? _parseToDouble(dynamic value) {
-    if (value == null) return null;
-    if (value is double) return value;
-    if (value is int) return value.toDouble();
-    if (value is String) {
-      return double.tryParse(value);
-    }
-    return null;
-  }
-
+  /// Convert to Firebase map
   Map<String, dynamic> toMap() {
-    final map = <String, dynamic>{
+    return {
       'postTitle': postTitle,
       'postGender': postGender,
       'postCity': postCity,
@@ -221,9 +224,7 @@ class Post {
       'postWeightCategory': postWeightCategory,
       'postQuantity': postQuantity,
       'postWeight': postWeight,
-      'postDate': postDate ?? DateTime.now().millisecondsSinceEpoch,
-      'createdAt': createdAt ?? DateTime.now().millisecondsSinceEpoch,
-      'updatedAt': updatedAt,
+      'postDate': postDate,
       'postIsApproved': postIsApproved,
       'postIsFeatured': postIsFeatured,
       'postIsHomePost': postIsHomePost,
@@ -232,36 +233,81 @@ class Post {
       'postIsSold': postIsSold,
       'postIsTop': postIsTop,
       'postIsUpdate': postIsUpdate,
-      'postIsCancelled': postIsCancelled, // ✅ NEW FIELD ADDED
+      'postCancelApproved': postCancelApproved,
+      'postIsCancelled': postIsCancelled,
       'postImages': postImages,
+      'postAdditionalDetails': postAdditionalDetails,
+      'postArea': postArea,
+      'postLiquidQuantity': postLiquidQuantity,
+      'postLiveStockCategory': postLiveStockCategory,
+      'postServiceType': postServiceType,
+      'postBarCode': postBarCode,
+
+      // User-related
+      'postUserContact': postUserContact,
+      'postUserId': postUserId,
+      'postUserImage': postUserImage,
+      'postUserLocation': postUserLocation,
+      'postUserLoginDate': postUserLoginDate,
+      'postUserMail': postUserMail,
+      'postUserName': postUserName,
+      'postViews': postViews,
+
+      // NEW FIELDS
+      'postNoLikes': postNoLikes,
+      'postLimits': postLimits,
+      'postIsColoredTimes': postIsColoredTimes,
+      'postTopTime': postTopTime,
+      'postIsHomePostTimes': postIsHomePostTimes,
+      'postPutTopTime': postPutTopTime,
+      'postIsColoredExpiry': postIsColoredExpiry,
+      'postIsTopExpiry': postIsTopExpiry,
+      'postIsHomePostExpiry': postIsHomePostExpiry,
+      'postIsPutTopExpiry': postIsPutTopExpiry,
+      'postUserImageColor': postUserImageColor,
     };
+  }
 
-    // Add category-specific fields only if they're not null
-    if (postAdditionalDetails != null) {
-      map['postAdditionalDetails'] = postAdditionalDetails;
-    }
-    if (postArea != null) {
-      map['postArea'] = postArea;
-    }
-    if (postLiquidQuantity != null) {
-      map['postLiquidQuantity'] = postLiquidQuantity;
-    }
-    if (postLiveStockCategory != null) {
-      map['postLiveStockCategory'] = postLiveStockCategory;
-    }
-    if (postServiceType != null) {
-      map['postServiceType'] = postServiceType;
-    }
-    if (postOliveOilType != null) {
-      map['postOliveOilType'] = postOliveOilType;
-    }
-    if (postFertilizerType != null) {
-      map['postFertilizerType'] = postFertilizerType;
-    }
-    if (postSystemType != null) {
-      map['postSystemType'] = postSystemType;
-    }
+  /// Safely parse images
+  static List<String> _parseImagesList(dynamic value) {
+    if (value == null) return [];
+    if (value is Map) return value.values.map((e) => e.toString()).toList();
+    if (value is List) return value.map((e) => e.toString()).toList();
+    if (value is String && value.isNotEmpty) return [value];
+    return [];
+  }
 
-    return map;
+  /// Safely parse int
+  static int? _parseToInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return null;
+      return int.tryParse(trimmed);
+    }
+    return null;
+  }
+
+  /// Safely parse double
+  static double? _parseToDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  /// Safely parse boolean
+  static bool? _parseToBool(dynamic value) {
+    if (value == null) return null;
+    if (value is bool) return value;
+    if (value is String) {
+      final lower = value.toLowerCase().trim();
+      return lower == 'true' || lower == '1';
+    }
+    if (value is int) return value == 1;
+    return null;
   }
 }

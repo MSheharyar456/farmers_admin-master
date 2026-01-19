@@ -1,4 +1,3 @@
-
 // viewmodels/dashboard_viewmodel.dart
 import 'package:farmers_admin/models/dashboard_model.dart';
 import 'package:farmers_admin/models/users_feedback_model.dart';
@@ -14,7 +13,7 @@ class DashboardViewModel extends ChangeNotifier {
   List<FeedbackModel> _feedbackList = [];
   bool _isLoading = false;
   String? _errorMessage;
-  Map<String, String> _userNameCache = {};
+  final Map<String, String> _userNameCache = {};
 
   // Getters
   DashboardStats get stats => _stats;
@@ -88,10 +87,5 @@ class DashboardViewModel extends ChangeNotifier {
     final userName = await _firebaseService.getUserName(userId);
     _userNameCache[userId] = userName;
     return userName;
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
   }
 }

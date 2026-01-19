@@ -10,7 +10,7 @@ class UserService {
   final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
 
   Stream<DatabaseEvent> get usersStream =>
-      _dbRef.child('UsersAuthData').onValue;
+      _dbRef.child('usersAuthData').onValue;
 
   List<UserModel> parseUsersFromSnapshot(Map<String, dynamic> data) {
     final List<UserModel> users = [];
@@ -23,7 +23,7 @@ class UserService {
 
   Future<bool> deleteUser(String uid) async {
     try {
-      await _dbRef.child('UsersAuthData/$uid').remove();
+      await _dbRef.child('usersAuthData/$uid').remove();
       return true;
     } catch (e) {
       print('Error deleting user: $e');

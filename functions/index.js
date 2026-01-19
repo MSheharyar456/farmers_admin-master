@@ -1,186 +1,197 @@
-// functions/index.js
-// Replace ALL content in this file with this code
-
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 
-// Initialize Firebase Admin SDK
-admin.initializeApp();
-
-// Function to create user with specific status
-exports.createUserWithStatus = functions.https.onCall(async (data, context) => {
-  // Check if the request is made by an authenticated user
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      'User must be authenticated to perform this action.'
-    );
+// Initialize Firebase Admin with error handling
+try {
+  admin.initializeApp();
+  console.log('Firebase Admin initialized successfully');
+} catch (error) {
+  console.error('Error initializing Firebase Admin:', error);
+  // If already initialized, that's okay
+  if (error.code !== 'app/already-initialized') {
+    throw error;
   }
+}
 
-  // OPTIONAL: Check if user is admin (uncomment after setting up admin claims)
-  // if (!context.auth.token.admin) {
-  //   throw new functions.https.HttpsError(
-  //     'permission-denied',
-  //     'Only admins can create users.'
-  //   );
-  // }
-
-  const { email, password, displayName, disabled } = data;
-
-  // Validate input
-  if (!email || !password) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Email and password are required.'
-    );
+/**
+ * Cloud Function to send FCM push notifications
+ * This function handles OAuth 2.0 authentication automatically
+ * 
+ * Call from Flutter app:
+ * final callable = FirebaseFunctions.instanceFor(region: 'us-central1').httpsCallable('sendNotification');
+ * final result = await callable.call({
+ *   'fcmToken': 'user_fcm_token',
+ *   'title': 'Notification Title',
+ *   'message': 'Notification Message',
+ *   'userId': 'user_id',
+ * });
+ */
+exports.sendNotification = functions.region('us-central1').https.onCall({
+  // Explicitly allow unauthenticated invocations for web access
+  // This is required for web apps to call the function
+}, async (data, context) => {
+  // Wrap everything in try-catch to catch any initialization errors
+  const startTime = Date.now();
+  
+  try {
+    // Log function invocation with full details
+    console.log('========================================');
+    console.log('sendNotification function called');
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('Has Data:', !!data);
+    console.log('Has Context:', !!context);
+    console.log('Context Auth:', context?.auth ? 'Authenticated' : 'Unauthenticated');
+    console.log('Data Type:', typeof data);
+    if (data) {
+      console.log('Raw Data Keys:', Object.keys(data));
+      // Don't log full data to avoid sensitive info in logs
+    }
+    console.log('========================================');
+  } catch (logError) {
+    console.error('Error in initial logging:', logError);
   }
 
   try {
-    // Create user in Firebase Authentication with disabled status
-    const userRecord = await admin.auth().createUser({
-      email: email,
-      password: password,
-      displayName: displayName || '',
-      disabled: disabled || false  // This actually disables/enables the account
-    });
-
-    console.log('Successfully created user:', userRecord.uid);
-
-    return {
-      success: true,
-      message: 'User created successfully.',
-      userId: userRecord.uid,
-      email: userRecord.email,
-      disabled: userRecord.disabled
-    };
-  } catch (error) {
-    console.error('Error creating user:', error);
-
-    // Handle specific Firebase Auth errors
-    if (error.code === 'auth/email-already-exists') {
-      throw new functions.https.HttpsError(
-        'already-exists',
-        'This email is already registered.'
-      );
-    } else if (error.code === 'auth/invalid-email') {
+    // Validate input data exists
+    if (!data || typeof data !== 'object') {
+      console.error('Invalid data received:', data);
       throw new functions.https.HttpsError(
         'invalid-argument',
-        'Invalid email address.'
-      );
-    } else if (error.code === 'auth/weak-password') {
-      throw new functions.https.HttpsError(
-        'invalid-argument',
-        'Password is too weak. Use at least 6 characters.'
+        'Request data is missing or invalid'
       );
     }
 
-    throw new functions.https.HttpsError(
-      'internal',
-      'Failed to create user: ' + error.message
-    );
-  }
-});
+    const { fcmToken, title, message, userId } = data;
 
-// Function to update user status (enable/disable)
-exports.updateUserStatus = functions.https.onCall(async (data, context) => {
-  // Check if the request is made by an authenticated user
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      'User must be authenticated to perform this action.'
-    );
-  }
-
-  // OPTIONAL: Check if user is admin (uncomment after setting up admin claims)
-  // if (!context.auth.token.admin) {
-  //   throw new functions.https.HttpsError(
-  //     'permission-denied',
-  //     'Only admins can update user status.'
-  //   );
-  // }
-
-  const { userId, disabled } = data;
-
-  // Validate input
-  if (!userId) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'User ID is required.'
-    );
-  }
-
-  if (typeof disabled !== 'boolean') {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Disabled must be a boolean value.'
-    );
-  }
-
-  try {
-    // Update user's disabled status in Firebase Authentication
-    await admin.auth().updateUser(userId, {
-      disabled: disabled
-    });
-
-    // Also update the status in Realtime Database for reference
-    await admin.database().ref(`UsersAuthData/${userId}`).update({
-      isAccountEnabled: !disabled,
-      lastStatusUpdate: Date.now(),
-      updatedBy: context.auth.uid
-    });
-
-    console.log(`User ${userId} status updated to: ${disabled ? 'disabled' : 'enabled'}`);
-
-    return {
-      success: true,
-      message: `User account ${disabled ? 'disabled' : 'enabled'} successfully.`,
-      userId: userId,
-      disabled: disabled
-    };
-  } catch (error) {
-    console.error('Error updating user status:', error);
-
-    if (error.code === 'auth/user-not-found') {
+    // Validate required fields
+    if (!fcmToken || typeof fcmToken !== 'string' || fcmToken.trim().length === 0) {
+      console.error('Missing or invalid fcmToken');
       throw new functions.https.HttpsError(
-        'not-found',
-        'User not found.'
+        'invalid-argument',
+        'fcmToken is required and must be a non-empty string'
       );
     }
 
-    throw new functions.https.HttpsError(
-      'internal',
-      'Failed to update user status: ' + error.message
-    );
-  }
-});
+    if (!title || typeof title !== 'string' || title.trim().length === 0) {
+      console.error('Missing or invalid title');
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'title is required and must be a non-empty string'
+      );
+    }
 
-// OPTIONAL: Function to set admin claims
-// Call this function once to make a user an admin
-exports.setAdminClaim = functions.https.onCall(async (data, context) => {
-  // For security, you should add your own verification here
-  // For now, only the first time setup or use Firebase Console
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      console.error('Missing or invalid message');
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'message is required and must be a non-empty string'
+      );
+    }
 
-  const { userId } = data;
+    // Log validated input (without sensitive token data)
+    console.log('Validated input:', {
+      userId: userId || 'not provided',
+      title: title.substring(0, 50),
+      message: message.substring(0, 50),
+      fcmTokenLength: fcmToken.length,
+    });
 
-  if (!userId) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'User ID is required.'
-    );
-  }
+    // Prepare FCM message
+    const messagePayload = {
+      notification: {
+        title: title.trim(),
+        body: message.trim(),
+      },
+      data: {
+        type: 'admin_notification',
+        userId: userId || '',
+        title: title.trim(),
+        message: message.trim(),
+        timestamp: Date.now().toString(),
+      },
+      token: fcmToken.trim(),
+      android: {
+        priority: 'high',
+      },
+      apns: {
+        headers: {
+          'apns-priority': '10',
+        },
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+          },
+        },
+      },
+    };
 
-  try {
-    await admin.auth().setCustomUserClaims(userId, { admin: true });
+    // Send notification using Firebase Admin SDK (automatically handles OAuth 2.0)
+    console.log('Sending FCM notification...');
+    const response = await admin.messaging().send(messagePayload);
 
+    console.log('Successfully sent notification:', {
+      messageId: response,
+      timestamp: new Date().toISOString(),
+    });
+
+    const duration = Date.now() - startTime;
+    console.log('Function completed successfully in', duration, 'ms');
+    
     return {
       success: true,
-      message: `Admin privileges granted to user ${userId}`
+      message: 'Notification sent successfully',
+      messageId: response,
     };
   } catch (error) {
-    console.error('Error setting admin claim:', error);
+    const duration = Date.now() - startTime;
+    
+    // Log full error details
+    console.error('========================================');
+    console.error('Error in sendNotification function');
+    console.error('Duration:', duration, 'ms');
+    console.error('Error Message:', error.message);
+    console.error('Error Code:', error.code);
+    console.error('Error Name:', error.name);
+    console.error('Error Stack:', error.stack);
+    console.error('Timestamp:', new Date().toISOString());
+    console.error('========================================');
+
+    // If it's already an HttpsError, rethrow it with duration info
+    if (error instanceof functions.https.HttpsError) {
+      console.error('HttpsError rethrown:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      });
+      throw error;
+    }
+
+    // Handle FCM-specific errors
+    if (error.code === 'messaging/invalid-registration-token' || 
+        error.code === 'messaging/registration-token-not-registered') {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        `Invalid FCM token: ${error.message}`
+      );
+    }
+
+    // Handle other FCM errors
+    if (error.code && error.code.startsWith('messaging/')) {
+      throw new functions.https.HttpsError(
+        'internal',
+        `FCM error: ${error.message || 'Unknown FCM error'}`
+      );
+    }
+
+    // Generic error handling - ensure we always throw an HttpsError
+    const errorMessage = error.message || 'Unknown error occurred';
+    const errorCode = error.code || 'unknown';
+    
     throw new functions.https.HttpsError(
       'internal',
-      'Failed to set admin claim: ' + error.message
+      `Failed to send notification: ${errorMessage} (Code: ${errorCode})`
     );
   }
 });
+

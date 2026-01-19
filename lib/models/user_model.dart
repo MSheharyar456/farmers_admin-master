@@ -7,6 +7,12 @@ class UserModel {
   final String status;
   final String? userScore;
   final bool isVerified;
+  final int userLoginDate;
+  final String? userFCMToken;
+  final String? userContact; // Added userContact field
+  final int userPostLimit;
+  final int userUpdatePostLimit;
+  final int userFollowing;
   final Map<String, dynamic> rawData;
 
   UserModel({
@@ -17,6 +23,12 @@ class UserModel {
     required this.status,
     this.userScore,
     required this.isVerified,
+    required this.userLoginDate,
+    this.userFCMToken,
+    this.userContact, // Added to constructor
+    required this.userPostLimit,
+    required this.userUpdatePostLimit,
+    required this.userFollowing,
     required this.rawData,
   });
 
@@ -36,9 +48,8 @@ class UserModel {
     // Store complete data for editing
     final completeData = Map<String, dynamic>.from(data);
     completeData['uid'] = uid;
-
     return UserModel(
-      uid: uid,
+      uid: data['userId'] ?? uid,
       userName: data['userName'] ?? 'N/A',
       userEmail: data['userMail'] ?? 'N/A',
       dob: dob,
@@ -46,6 +57,12 @@ class UserModel {
       userScore: data['userScore']?.toString(),
       isVerified: isVerified ?? false,
       rawData: completeData,
+      userLoginDate: data['userLoginDate'],
+      userFCMToken: data['userFCMToken']?.toString(),
+      userContact: data['userContact']?.toString(), // Parse userContact
+      userPostLimit: data['userPostLimit'] ?? 0,
+      userUpdatePostLimit: data['userUpdatePostLimit'] ?? 0,
+      userFollowing: data['userFollowing'] ?? 0,
     );
   }
 

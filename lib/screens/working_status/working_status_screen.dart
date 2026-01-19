@@ -1,29 +1,52 @@
 import 'dart:async';
 import 'package:farmers_admin/common/app_header.dart';
+import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/working_status.dart';
 import 'package:farmers_admin/screens/working_status/add_working_status.dart';
 import 'package:farmers_admin/screens/working_status/edit_working_status.dart';
 import 'package:farmers_admin/widgets/delete_dialog.dart';
+import 'package:farmers_admin/widgets/responsive_scafold.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
+import 'package:farmers_admin/services/permission_helper.dart';
 
 class WorkingStatusManagementScreen extends StatefulWidget {
   const WorkingStatusManagementScreen({super.key});
 
   @override
-  State<WorkingStatusManagementScreen> createState() => _WorkingStatusManagementScreenState();
+  State<WorkingStatusManagementScreen> createState() =>
+      _WorkingStatusManagementScreenState();
 }
 
-class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementScreen> {
+class _WorkingStatusManagementScreenState
+    extends State<WorkingStatusManagementScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return ResponsiveScaffold(
+      title: "Farmers Admin",
+      sideMenu: const SideMenu(),
+      content: const DashboardContent(),
+    );
+  }
+}
+
+class DashboardContent extends StatefulWidget {
+  const DashboardContent({super.key});
+
+  @override
+  State<DashboardContent> createState() => _DashboardContentState();
+}
+
+class _DashboardContentState extends State<DashboardContent> {
   late PlutoGridStateManager stateManager;
   late DatabaseReference _dbRef;
   List<WorkingStatus> _workingStatuses = [];
   StreamSubscription<DatabaseEvent>? _workingStatusSubscription;
   bool _isGridLoaded = false;
   bool _isLoading = true;
-  final double rowHeight = 45;
+  final double rowHeight = 40;
   final double headerHeight = 50;
 
   String _searchQuery = '';
@@ -31,7 +54,16 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
   int _currentPage = 1;
   int _rowsPerPage = 10;
 
-  List<WorkingStatus> get _filteredStatuses => _workingStatuses.where(_matchesFilters).toList();
+  // Temporary variables for filter input before applying
+  String _tempSearchQuery = '';
+  String? _tempSelectedButtonStatus;
+  late TextEditingController _searchController;
+
+  // Permission states
+  bool _canEdit = true;
+
+  List<WorkingStatus> get _filteredStatuses =>
+      _workingStatuses.where(_matchesFilters).toList();
   int get totalPages => (_filteredStatuses.length / _rowsPerPage).ceil();
 
   List<WorkingStatus> get _paginatedStatuses {
@@ -82,8 +114,8 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
         field: 'isEnableButton',
         type: PlutoColumnType.text(),
         enableEditingMode: false,
-        width: 150,
-        minWidth: 120,
+        width: 125,
+        minWidth: 125,
         renderer: (ctx) {
           final value = ctx.cell.value?.toString() ?? 'false';
           final isEnabled = value.toLowerCase() == 'true';
@@ -93,19 +125,20 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 8,
-                height: 8,
+                width: 5,
+                height: 5,
                 decoration: BoxDecoration(
                   color: statusColor,
                   shape: BoxShape.circle,
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 5),
               Text(
                 isEnabled ? 'Enabled' : 'Disabled',
                 style: const TextStyle(
                   color: Colors.black,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
                 ),
               ),
             ],
@@ -117,8 +150,8 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
         field: 'isSomethingWrong',
         type: PlutoColumnType.text(),
         enableEditingMode: false,
-        width: 150,
-        minWidth: 120,
+        width: 125,
+        minWidth: 125,
         renderer: (ctx) {
           final value = ctx.cell.value?.toString() ?? 'false';
           final isWrong = value.toLowerCase() == 'true';
@@ -128,19 +161,20 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 8,
-                height: 8,
+                width: 5,
+                height: 5,
                 decoration: BoxDecoration(
                   color: statusColor,
                   shape: BoxShape.circle,
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 5),
               Text(
                 isWrong ? 'Yes' : 'No',
                 style: const TextStyle(
                   color: Colors.black,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
                 ),
               ),
             ],
@@ -159,71 +193,54 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
           return Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                height: 30,
-                width: 30,
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: IconButton(
-                  icon: SvgPicture.asset(
-                    'images/ic_farm_edit.svg',
-                    width: 20,
-                    height: 20,
-                    color: Colors.blue,
+              if (_canEdit)
+                Container(
+                  height: 27,
+                  width: 27,
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  tooltip: 'Edit Status',
-                  splashRadius: 20,
-                  onPressed: () {
-                    try {
-                      final status = _workingStatuses.firstWhere((s) => s.statusId == statusId);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => EditWorkingStatusScreen(status: status),
-                        ),
-                      );
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error: Could not find status with ID $statusId')),
+                  child: IconButton(
+                    icon: SvgPicture.asset(
+                      'images/ic_farm_edit.svg',
+                      width: 15,
+                      height: 15,
+                      color: Colors.blue,
+                    ),
+                    tooltip: 'Edit Status',
+                    splashRadius: 20,
+                    onPressed: () {
+                      try {
+                        final status = _workingStatuses.firstWhere(
+                          (s) => s.statusId == statusId,
                         );
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                EditWorkingStatusScreen(status: status),
+                          ),
+                        );
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Error: Could not find status with ID $statusId',
+                              ),
+                            ),
+                          );
+                        }
                       }
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                height: 30,
-                width: 30,
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: IconButton(
-                  icon: SvgPicture.asset(
-                    'images/ic_farm_trash.svg',
-                    width: 20,
-                    height: 20,
-                    color: Colors.red,
+                    },
                   ),
-                  tooltip: 'Delete Status',
-                  splashRadius: 20,
-                  onPressed: () async {
-                    await showDeleteDialog(
-                      context: context,
-                      title: "Delete Working Status",
-                      message: "Are you sure you want to delete this working status?",
-                      onConfirm: () async {
-                        await FirebaseDatabase.instance.ref('workingStatus/$statusId').remove();
-                        setState(() {});
-                      },
-                    );
-                  },
                 ),
-              ),
+              if (!_canEdit)
+                const Text(
+                  'No actions',
+                  style: TextStyle(color: Colors.grey, fontSize: 11),
+                ),
             ],
           );
         },
@@ -235,7 +252,18 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
   void initState() {
     super.initState();
     _dbRef = FirebaseDatabase.instance.ref().child('workingStatus');
+    _searchController = TextEditingController();
+    _loadPermissions();
     _listenForWorkingStatuses();
+  }
+
+  Future<void> _loadPermissions() async {
+    final canEdit = await PermissionHelper.canEdit();
+    if (mounted) {
+      setState(() {
+        _canEdit = canEdit;
+      });
+    }
   }
 
   void _listenForWorkingStatuses() {
@@ -295,8 +323,12 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
             'id': PlutoCell(value: status.statusId ?? ''),
             'workingTitle': PlutoCell(value: status.workingTitle ?? ''),
             'workingDetails': PlutoCell(value: status.workingDetails ?? ''),
-            'isEnableButton': PlutoCell(value: status.isEnableButton.toString()),
-            'isSomethingWrong': PlutoCell(value: status.isSomethingWrong.toString()),
+            'isEnableButton': PlutoCell(
+              value: status.isEnableButton.toString(),
+            ),
+            'isSomethingWrong': PlutoCell(
+              value: status.isSomethingWrong.toString(),
+            ),
             'actions': PlutoCell(value: ''),
           },
         ),
@@ -311,22 +343,20 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
   @override
   void dispose() {
     _workingStatusSubscription?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
   void _applyFilters() {
     setState(() {
+      _searchQuery = _tempSearchQuery;
+      _selectedButtonStatus = _tempSelectedButtonStatus;
+      _currentPage = 1;
       if (_isGridLoaded) _updatePlutoGridRows();
     });
   }
 
   Widget _buildEmptyState() {
-    final hasFilters = _searchQuery.isNotEmpty || _selectedButtonStatus != null;
-
-    if (hasFilters && _workingStatuses.isNotEmpty) {
-      return _buildNoResultsState();
-    }
-
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -355,10 +385,7 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
             const SizedBox(height: 8),
             Text(
               "Add your first working status to get started",
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
+              style: const TextStyle(fontSize: 16, color: Colors.grey),
               textAlign: TextAlign.center,
             ),
           ],
@@ -368,34 +395,33 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
   }
 
   Widget _buildNoResultsState() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 768;
-
-    return SizedBox(
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
       height: 400,
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.asset(
-              'images/image_farm_nothing_remains.png',
-              height: isMobile ? 120 : 150,
-            ),
+            Image.asset('images/image_farm_nothing_remains.png', height: 150),
             const SizedBox(height: 24),
-            Text(
+            const Text(
               "You're all caught up!",
               style: TextStyle(
-                fontSize: isMobile ? 18 : 22,
+                fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: Colors.black87,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              "No working statuses found",
+            const SizedBox(height: 2),
+            const Text(
+              "No working statuses found matching your filters",
               style: TextStyle(
-                fontSize: isMobile ? 14 : 16,
-                color: Colors.grey,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
               ),
             ),
           ],
@@ -418,7 +444,12 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
             child: SingleChildScrollView(
               scrollDirection: Axis.vertical,
               child: Container(
-                padding: EdgeInsets.all(isMobile ? 12 : 15),
+                padding: const EdgeInsets.only(
+                  right: 30,
+                  left: 30,
+                  bottom: 30,
+                  top: 20,
+                ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.start,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -426,312 +457,399 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
                     // Header Section
                     isMobile
                         ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Working Status',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .headlineMedium
-                                  ?.copyWith(
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Working Status',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineMedium
+                                        ?.copyWith(
+                                          color: Colors.black,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    "Dashboard / Working Status List",
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(color: Colors.grey),
+                                  ),
+                                ],
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              "Dashboard / Working Status List",
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (context) =>
-                                    const AddWorkingStatusScreen()),
-                              );
-                            },
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            const AddWorkingStatusScreen(),
+                                      ),
+                                    );
+                                  },
 
-                            icon: const Icon(Icons.add,
-                                color: Colors.white),
-                            label: const Text("Add Working Status",
-                                style: TextStyle(color: Colors.white)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
+                                  icon: const Icon(
+                                    Icons.add,
+                                    color: Colors.white,
+                                  ),
+                                  label: const Text(
+                                    "Add Working Status",
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 16,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
+                            ],
+                          )
                         : Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Working Status',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .headlineLarge
-                                  ?.copyWith(
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Working Status',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineLarge
+                                        ?.copyWith(
+                                          color: Colors.black,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    'Dashboard / Working Status List',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(
+                                          color: Colors.grey,
+                                          fontSize: 10,
+                                          letterSpacing: 0.5,
+                                          fontWeight: FontWeight.normal,
+                                          fontFamily: 'Roboto',
+                                        ),
+                                  ),
+                                  const SizedBox(height: 15),
+                                ],
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              "Dashboard / Working Status List",
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleSmall
-                                  ?.copyWith(
-                                color: Colors.grey,
+                              SizedBox(
+                                height: 38,
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            const AddWorkingStatusScreen(),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(
+                                    Icons.add,
+                                    color: Colors.white,
+                                    size: 14,
+                                  ),
+                                  label: const Text(
+                                    "Add Working Status",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 0,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (context) =>
-                                  const AddWorkingStatusScreen()),
-                            );
-                          },
-                          icon: const Icon(Icons.add,
-                              color: Colors.white),
-                          label: const Text("Add Working Status",
-                              style: TextStyle(color: Colors.white)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 20),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
                     const SizedBox(height: 20),
 
                     // Filters Section
                     isMobile
                         ? Column(
-                      children: [
-                        TextField(
-                          decoration: InputDecoration(
-                            hintText: 'Search...',
-                            prefixIcon: const Icon(Icons.search),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            focusedBorder: const OutlineInputBorder(
-                              borderSide: BorderSide(
-                                  color: Colors.green, width: 2),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 10),
-                          ),
-                          onChanged: (val) {
-                            setState(() {
-                              _searchQuery = val.toLowerCase();
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: _applyFilters,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                SvgPicture.asset(
-                                  'images/ic_farm_filter.svg',
-                                  height: 20,
-                                  width: 20,
-                                  color: Colors.white,
+                            children: [
+                              TextField(
+                                decoration: InputDecoration(
+                                  hintText: 'Search...',
+                                  prefixIcon: const Icon(Icons.search),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  focusedBorder: const OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Colors.green,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
                                 ),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  "APPLY FILTERS",
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                        : Row(
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: SizedBox(
-                            width: isTablet ? 200 : 300,
-                            child: TextField(
-                              decoration: InputDecoration(
-                                hintText: 'Search...',
-                                prefixIcon: const Icon(Icons.search),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                focusedBorder: const OutlineInputBorder(
-                                  borderSide: BorderSide(
-                                      color: Colors.green, width: 2),
-                                ),
-                                contentPadding:
-                                const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 10),
+                                controller: _searchController,
+                                onChanged: (val) {
+                                  setState(() {
+                                    _tempSearchQuery = val.toLowerCase();
+                                  });
+                                },
                               ),
-                              onChanged: (val) {
-                                setState(() {
-                                  _searchQuery = val.toLowerCase();
-                                });
-                              },
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 1,
-                          child: DropdownButtonFormField<String>(
-                            value: _selectedButtonStatus,
-                            isExpanded: true,
-                            decoration: InputDecoration(
-                              fillColor: Colors.white,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  onPressed: _applyFilters,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 16,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      SvgPicture.asset(
+                                        'images/ic_farm_filter.svg',
+                                        height: 20,
+                                        width: 20,
+                                        color: Colors.white,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Text(
+                                        "APPLY FILTERS",
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                              focusedBorder: const OutlineInputBorder(
-                                borderSide: BorderSide(
-                                    color: Colors.green, width: 2),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 10),
-                            ),
-                            hint: const Text("Button Status"),
-                            dropdownColor: Colors.white,
-                            items: const [
-                              DropdownMenuItem(
-                                  value: null, child: Text("All")),
-                              DropdownMenuItem(
-                                  value: "Enabled",
-                                  child: Text("Enabled")),
-                              DropdownMenuItem(
-                                  value: "Disabled",
-                                  child: Text("Disabled")),
                             ],
-                            onChanged: (val) => setState(
-                                    () => _selectedButtonStatus = val),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 1,
-                          child: ElevatedButton(
-                            onPressed: _applyFilters,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 20),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
+                          )
+                        : Row(
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: SizedBox(
+                                  width: isTablet ? 200 : 300,
+                                  height: 38,
+                                  child: TextField(
+                                    style: const TextStyle(fontSize: 12),
+                                    decoration: InputDecoration(
+                                      fillColor: Colors.white,
+                                      filled: true,
+                                      hintText: 'Search...',
+                                      hintStyle: TextStyle(fontSize: 12),
+                                      prefixIcon: const Icon(
+                                        Icons.search,
+                                        size: 14,
+                                      ),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      focusedBorder: const OutlineInputBorder(
+                                        borderSide: BorderSide(
+                                          color: Colors.green,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 0,
+                                          ),
+                                    ),
+                                    controller: _searchController,
+                                    onChanged: (val) {
+                                      setState(() {
+                                        _tempSearchQuery = val.toLowerCase();
+                                      });
+                                    },
+                                  ),
+                                ),
                               ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SvgPicture.asset(
-                                  'images/ic_farm_filter.svg',
-                                  height: 20,
-                                  width: 20,
-                                  color: Colors.white,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                flex: 1,
+                                child: SizedBox(
+                                  height: 38,
+                                  child: DropdownButtonFormField<String>(
+                                    initialValue: _tempSelectedButtonStatus,
+                                    isExpanded: true,
+                                    decoration: InputDecoration(
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      focusedBorder: const OutlineInputBorder(
+                                        borderSide: BorderSide(
+                                          color: Colors.green,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 0,
+                                          ),
+                                    ),
+                                    hint: const Text(
+                                      "Button Status",
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                    dropdownColor: Colors.white,
+                                    items: const [
+                                      DropdownMenuItem(
+                                        value: null,
+                                        child: Text(
+                                          "All",
+                                          style: TextStyle(fontSize: 12),
+                                        ),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: "Enabled",
+                                        child: Text(
+                                          "Enabled",
+                                          style: TextStyle(fontSize: 12),
+                                        ),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: "Disabled",
+                                        child: Text(
+                                          "Disabled",
+                                          style: TextStyle(fontSize: 12),
+                                        ),
+                                      ),
+                                    ],
+                                    onChanged: (val) => setState(
+                                      () => _tempSelectedButtonStatus = val,
+                                    ),
+                                  ),
                                 ),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  "APPLY FILTERS",
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                flex: 1,
+                                child: ElevatedButton(
+                                  onPressed: _applyFilters,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 20,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(5),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SvgPicture.asset(
+                                        'images/ic_farm_filter.svg',
+                                        height: 12,
+                                        width: 12,
+                                        color: Colors.white,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Text(
+                                        "APPLY FILTERS",
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 10),
 
                     // Grid Section
                     SizedBox(
                       child: _isLoading
                           ? const Center(
-                          child: CircularProgressIndicator(
-                              color: Colors.green))
-                          : _workingStatuses.isEmpty ||
-                          (_isGridLoaded && _filteredStatuses.isEmpty)
+                              child: CircularProgressIndicator(
+                                color: Colors.green,
+                              ),
+                            )
+                          : _workingStatuses.isEmpty
                           ? _buildEmptyState()
+                          : _filteredStatuses.isEmpty
+                          ? _buildNoResultsState()
                           : Container(
-                        color: Colors.white,
-                        height: (_paginatedStatuses.length *
-                            rowHeight) +
-                            headerHeight,
-                        child: PlutoGrid(
-                          columns: _getColumns(),
-                          rows: [],
-                          onLoaded: (event) {
-                            stateManager = event.stateManager;
-                            stateManager.setShowColumnFilter(false);
-                            setState(() => _isGridLoaded = true);
-                            if (_workingStatuses.isNotEmpty)
-                              _updatePlutoGridRows();
-                          },
-                          configuration: PlutoGridConfiguration(
-                            columnSize:
-                            const PlutoGridColumnSizeConfig(
-                              autoSizeMode: PlutoAutoSizeMode.scale,
+                              color: Colors.white,
+                              height:
+                                  (_paginatedStatuses.length * rowHeight) +
+                                  headerHeight,
+                              child: PlutoGrid(
+                                columns: _getColumns(),
+                                rows: [],
+                                onLoaded: (event) {
+                                  stateManager = event.stateManager;
+                                  stateManager.setShowColumnFilter(false);
+                                  setState(() => _isGridLoaded = true);
+                                  if (_workingStatuses.isNotEmpty) {
+                                    _updatePlutoGridRows();
+                                  }
+                                },
+                                configuration: PlutoGridConfiguration(
+                                  columnSize: const PlutoGridColumnSizeConfig(
+                                    autoSizeMode: PlutoAutoSizeMode.scale,
+                                  ),
+                                  style: PlutoGridStyleConfig(
+                                    rowHeight: 40,
+                                    columnTextStyle: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                    cellTextStyle: const TextStyle(
+                                      fontSize: 12,
+                                    ),
+                                    enableColumnBorderHorizontal: true,
+                                    enableCellBorderHorizontal: true,
+                                    enableColumnBorderVertical: true,
+                                    enableRowColorAnimation: false,
+                                    oddRowColor: Colors.white,
+                                    evenRowColor: Colors.grey.shade50,
+                                  ),
+                                ),
+                              ),
                             ),
-                            style: PlutoGridStyleConfig(
-                              rowHeight: 45,
-                              columnTextStyle: const TextStyle(
-                                  fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ),
-                      ),
                     ),
 
                     // Pagination Footer
@@ -739,7 +857,7 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
                       Container(
                         width: double.infinity,
                         padding: EdgeInsets.symmetric(
-                          vertical: isMobile ? 12 : 16,
+                          vertical: isMobile ? 12 : 8,
                           horizontal: isMobile ? 4 : 8,
                         ),
                         decoration: BoxDecoration(
@@ -755,235 +873,266 @@ class _WorkingStatusManagementScreenState extends State<WorkingStatusManagementS
                         ),
                         child: isMobile
                             ? Column(
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(
-                                      Icons.arrow_back_ios_new,
-                                      size: 16,
-                                      color: Colors.grey),
-                                  onPressed: _currentPage > 1
-                                      ? () {
-                                    setState(() {
-                                      _currentPage--;
-                                      _updatePlutoGridRows();
-                                    });
-                                  }
-                                      : null,
-                                ),
-                                Text(
-                                  '$_currentPage / $totalPages',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w500,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.arrow_back_ios_new,
+                                          size: 16,
+                                          color: Colors.grey,
+                                        ),
+                                        onPressed: _currentPage > 1
+                                            ? () {
+                                                setState(() {
+                                                  _currentPage--;
+                                                  _updatePlutoGridRows();
+                                                });
+                                              }
+                                            : null,
+                                      ),
+                                      Text(
+                                        '$_currentPage / $totalPages',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.arrow_forward_ios,
+                                          size: 16,
+                                          color: Colors.grey,
+                                        ),
+                                        onPressed: _currentPage < totalPages
+                                            ? () {
+                                                setState(() {
+                                                  _currentPage++;
+                                                  _updatePlutoGridRows();
+                                                });
+                                              }
+                                            : null,
+                                      ),
+                                    ],
                                   ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(
-                                      Icons.arrow_forward_ios,
-                                      size: 16,
-                                      color: Colors.grey),
-                                  onPressed: _currentPage < totalPages
-                                      ? () {
-                                    setState(() {
-                                      _currentPage++;
-                                      _updatePlutoGridRows();
-                                    });
-                                  }
-                                      : null,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Container(
-                                  height: 34,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                        color: Colors.grey.shade300),
-                                    borderRadius:
-                                    BorderRadius.circular(6),
-                                    color: Colors.white,
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Container(
+                                        height: 34,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(
+                                            color: Colors.grey.shade300,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                          color: Colors.white,
+                                        ),
+                                        child: DropdownButtonHideUnderline(
+                                          child: DropdownButton<int>(
+                                            value: _rowsPerPage,
+                                            icon: const Icon(
+                                              Icons.keyboard_arrow_down,
+                                              size: 18,
+                                            ),
+                                            items: [5, 10, 20, 50]
+                                                .map(
+                                                  (e) => DropdownMenuItem(
+                                                    value: e,
+                                                    child: Text('$e'),
+                                                  ),
+                                                )
+                                                .toList(),
+                                            onChanged: (val) {
+                                              if (val != null) {
+                                                setState(() {
+                                                  _rowsPerPage = val;
+                                                  _currentPage = 1;
+                                                  _updatePlutoGridRows();
+                                                });
+                                              }
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      const Text(
+                                        "/ Page",
+                                        style: TextStyle(
+                                          color: Colors.black54,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  child: DropdownButtonHideUnderline(
-                                    child: DropdownButton<int>(
-                                      value: _rowsPerPage,
-                                      icon: const Icon(
-                                          Icons.keyboard_arrow_down,
-                                          size: 18),
-                                      items: [5, 10, 20, 50]
-                                          .map((e) => DropdownMenuItem(
-                                        value: e,
-                                        child: Text('$e'),
-                                      ))
-                                          .toList(),
-                                      onChanged: (val) {
-                                        if (val != null) {
-                                          setState(() {
-                                            _rowsPerPage = val;
-                                            _currentPage = 1;
-                                            _updatePlutoGridRows();
-                                          });
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                const Text(
-                                  "/ Page",
-                                  style: TextStyle(
-                                    color: Colors.black54,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        )
+                                ],
+                              )
                             : Wrap(
-                          alignment: WrapAlignment.start,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.arrow_back_ios_new,
-                                  size: 16, color: Colors.grey),
-                              onPressed: _currentPage > 1
-                                  ? () {
-                                setState(() {
-                                  _currentPage--;
-                                  _updatePlutoGridRows();
-                                });
-                              }
-                                  : null,
-                            ),
-                            ...List.generate(
-                              totalPages > 7 ? 7 : totalPages,
-                                  (index) {
-                                int pageNum;
-                                if (totalPages <= 7) {
-                                  pageNum = index + 1;
-                                } else {
-                                  if (_currentPage <= 4) {
-                                    pageNum = index + 1;
-                                  } else if (_currentPage >=
-                                      totalPages - 3) {
-                                    pageNum = totalPages - 6 + index;
-                                  } else {
-                                    pageNum = _currentPage - 3 + index;
-                                  }
-                                }
-
-                                final isActive = pageNum == _currentPage;
-
-                                return GestureDetector(
-                                  onTap: () {
-                                    setState(() {
-                                      _currentPage = pageNum;
-                                      _updatePlutoGridRows();
-                                    });
-                                  },
-                                  child: Container(
-                                    margin: const EdgeInsets.symmetric(
-                                        horizontal: 2),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: isActive
-                                          ? const Color(0xFFE8F5E9)
-                                          : Colors.white,
-                                      border: Border.all(
-                                        color: isActive
-                                            ? const Color(0xFF4CAF50)
-                                            : Colors.grey.shade300,
-                                      ),
-                                      borderRadius:
-                                      BorderRadius.circular(6),
+                                alignment: WrapAlignment.start,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.arrow_back_ios_new,
+                                      size: 14,
+                                      color: Colors.grey,
                                     ),
-                                    child: Text(
-                                      '$pageNum',
-                                      style: TextStyle(
-                                        color: isActive
-                                            ? const Color(0xFF4CAF50)
-                                            : Colors.black87,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
+                                    onPressed: _currentPage > 1
+                                        ? () {
+                                            setState(() {
+                                              _currentPage--;
+                                              _updatePlutoGridRows();
+                                            });
+                                          }
+                                        : null,
                                   ),
-                                );
-                              },
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.arrow_forward_ios,
-                                  size: 16, color: Colors.grey),
-                              onPressed: _currentPage < totalPages
-                                  ? () {
-                                setState(() {
-                                  _currentPage++;
-                                  _updatePlutoGridRows();
-                                });
-                              }
-                                  : null,
-                            ),
-                            const SizedBox(width: 12),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  height: 34,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                        color: Colors.grey.shade300),
-                                    borderRadius:
-                                    BorderRadius.circular(6),
-                                    color: Colors.white,
-                                  ),
-                                  child: DropdownButtonHideUnderline(
-                                    child: DropdownButton<int>(
-                                      value: _rowsPerPage,
-                                      dropdownColor: Colors.white,
-                                      icon: const Icon(
-                                          Icons.keyboard_arrow_down,
-                                          size: 18),
-                                      items: [5, 10, 20, 50]
-                                          .map((e) => DropdownMenuItem(
-                                        value: e,
-                                        child: Text('$e'),
-                                      ))
-                                          .toList(),
-                                      onChanged: (val) {
-                                        if (val != null) {
+                                  ...List.generate(
+                                    totalPages > 7 ? 7 : totalPages,
+                                    (index) {
+                                      int pageNum;
+                                      if (totalPages <= 7) {
+                                        pageNum = index + 1;
+                                      } else {
+                                        if (_currentPage <= 4) {
+                                          pageNum = index + 1;
+                                        } else if (_currentPage >=
+                                            totalPages - 3) {
+                                          pageNum = totalPages - 6 + index;
+                                        } else {
+                                          pageNum = _currentPage - 3 + index;
+                                        }
+                                      }
+
+                                      final isActive = pageNum == _currentPage;
+
+                                      return GestureDetector(
+                                        onTap: () {
                                           setState(() {
-                                            _rowsPerPage = val;
-                                            _currentPage = 1;
+                                            _currentPage = pageNum;
                                             _updatePlutoGridRows();
                                           });
-                                        }
-                                      },
+                                        },
+                                        child: Container(
+                                          margin: const EdgeInsets.symmetric(
+                                            horizontal: 2,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: isActive
+                                                ? const Color(0xFFE8F5E9)
+                                                : Colors.white,
+                                            border: Border.all(
+                                              color: isActive
+                                                  ? const Color(0xFF4CAF50)
+                                                  : Colors.grey.shade300,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              5,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '$pageNum',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isActive
+                                                  ? const Color(0xFF4CAF50)
+                                                  : Colors.black87,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.arrow_forward_ios,
+                                      size: 14,
+                                      color: Colors.grey,
                                     ),
+                                    onPressed: _currentPage < totalPages
+                                        ? () {
+                                            setState(() {
+                                              _currentPage++;
+                                              _updatePlutoGridRows();
+                                            });
+                                          }
+                                        : null,
                                   ),
-                                ),
-                                const SizedBox(width: 6),
-                                const Text(
-                                  "/ Page",
-                                  style: TextStyle(
-                                    color: Colors.black54,
-                                    fontWeight: FontWeight.w500,
+                                  const SizedBox(width: 12),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        height: 34,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(
+                                            color: Colors.grey.shade300,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            5,
+                                          ),
+                                          color: Colors.white,
+                                        ),
+                                        child: DropdownButtonHideUnderline(
+                                          child: DropdownButton<int>(
+                                            value: _rowsPerPage,
+                                            dropdownColor: Colors.white,
+                                            icon: const Icon(
+                                              Icons.keyboard_arrow_down,
+                                              size: 14,
+                                            ),
+                                            items: [5, 10, 20, 50]
+                                                .map(
+                                                  (e) => DropdownMenuItem(
+                                                    value: e,
+                                                    child: Text(
+                                                      '$e',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                )
+                                                .toList(),
+                                            onChanged: (val) {
+                                              if (val != null) {
+                                                setState(() {
+                                                  _rowsPerPage = val;
+                                                  _currentPage = 1;
+                                                  _updatePlutoGridRows();
+                                                });
+                                              }
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 5),
+                                      const Text(
+                                        "/ Page",
+                                        style: TextStyle(
+                                          color: Colors.black54,
+                                          fontWeight: FontWeight.w500,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+                                ],
+                              ),
                       ),
                   ],
                 ),

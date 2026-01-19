@@ -1,11 +1,11 @@
-import 'dart:typed_data';
-import 'dart:io' show File;
-import 'package:farmers_admin/screens/dashboard/dashboard.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:http/http.dart' as http;
 import '../../common/app_header.dart';
 import '../../common/side_menu.dart';
 
@@ -20,18 +20,24 @@ class EditUserScreen extends StatefulWidget {
 class _EditUserScreenState extends State<EditUserScreen> {
   final _formKey = GlobalKey<FormState>();
   late DatabaseReference _dbRef;
+  String loginDate = ''; // ✅ Declare it here
 
   // Controllers
   late TextEditingController _nameController;
   late TextEditingController _phoneController;
   late TextEditingController _emailController;
-  late TextEditingController _addressController;
+  late TextEditingController _userPostLimitController;
+  late TextEditingController _userUpdatePostLimitController;
+  late TextEditingController _userFollowingController;
+  late TextEditingController _userTotalPostsTimeController;
+  //late TextEditingController _addressController;
 
   bool _userIsVerified = false;
-  String _month = "January";
-  String _day = "1";
-  String _year = "2000";
+  final String _month = "January";
+  final String _day = "1";
+  final String _year = "2000";
   bool _isLoading = false;
+  bool _isImageLoading = false;
 
   String? _uploadedImagePath;
   Uint8List? _uploadedImageBytes;
@@ -41,23 +47,124 @@ class _EditUserScreenState extends State<EditUserScreen> {
     super.initState();
 
     final user = widget.user;
-    final userId = user['userId'] as String?;
-    _dbRef = FirebaseDatabase.instance.ref().child('UsersAuthData/$userId');
+    final userId = user['uid'] as String?;
+    _dbRef = FirebaseDatabase.instance.ref().child('usersAuthData/$userId');
 
     _nameController = TextEditingController(text: user['userName'] ?? '');
     _phoneController = TextEditingController(text: user['userContact'] ?? '');
     _emailController = TextEditingController(text: user['userMail'] ?? '');
-    _addressController = TextEditingController(text: user['userAddress'] ?? '');
-
-    final dob = user['userDOB'] as Map?;
-    if (dob != null) {
-      _month = dob['month'] ?? _month;
-      _day = dob['day'] ?? _day;
-      _year = dob['year'] ?? _year;
-    }
+    _userPostLimitController = TextEditingController(
+      text: (user['userPostLimit'] ?? 0).toString(),
+    );
+    _userUpdatePostLimitController = TextEditingController(
+      text: (user['userUpdatePostLimit'] ?? 0).toString(),
+    );
+    _userFollowingController = TextEditingController(
+      text: (user['userFollowing'] ?? 0).toString(),
+    );
+    _userTotalPostsTimeController = TextEditingController(
+      text: (user['userTotalPostsTime'] ?? 0).toString(),
+    );
+    //_addressController = TextEditingController(text: user['userAddress'] ?? '');
 
     _userIsVerified = user['userIsVerified'] ?? false;
-    _uploadedImagePath = user['userProfileImage'];
+
+    // Debug the image URL
+    print('User data from Firebase:');
+    print(user);
+
+    // Get image URL
+    _uploadedImagePath = user['userImage'] ?? '';
+
+    // If it's a Google image URL, try to cache it to Firebase Storage
+    if (_uploadedImagePath != null &&
+        _uploadedImagePath!.contains('googleusercontent.com')) {
+      _cacheGoogleImage(_uploadedImagePath!);
+    }
+
+    loginDate = _formatTimestamp(user['userLoginDate']);
+  }
+
+  // Method to cache Google profile image to Firebase Storage
+  Future<void> _cacheGoogleImage(String googleImageUrl) async {
+    try {
+      setState(() {
+        _isImageLoading = true;
+      });
+
+      print('Attempting to cache Google image...');
+
+      final userId = widget.user['uid'] as String?;
+
+      // First, check if we already have a cached version in Firebase Storage
+      try {
+        final storageRef = FirebaseStorage.instance.ref().child(
+          'user_profiles/$userId/profile.jpg',
+        );
+
+        final cachedUrl = await storageRef.getDownloadURL();
+
+        // If we got here, the image already exists in Firebase Storage
+        print('Using cached image from Firebase Storage: $cachedUrl');
+
+        setState(() {
+          _uploadedImagePath = cachedUrl;
+          _isImageLoading = false;
+        });
+
+        // Update database if it's still pointing to Google URL
+        if (widget.user['userImage'] != cachedUrl) {
+          await _dbRef.update({'userImage': cachedUrl});
+        }
+
+        return;
+      } catch (e) {
+        // Image doesn't exist in storage yet, continue to download and upload
+        print('No cached image found, downloading from Google...');
+      }
+
+      // Download the image from Google
+      final response = await http.get(Uri.parse(googleImageUrl));
+
+      if (response.statusCode == 200) {
+        final bytes = response.bodyBytes;
+
+        // Upload to Firebase Storage
+        final storageRef = FirebaseStorage.instance.ref().child(
+          'user_profiles/$userId/profile.jpg',
+        );
+
+        await storageRef.putData(
+          bytes,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
+
+        // Get the download URL
+        final downloadUrl = await storageRef.getDownloadURL();
+
+        // Update Firebase Realtime Database
+        await _dbRef.update({'userImage': downloadUrl});
+
+        // Update local state
+        setState(() {
+          _uploadedImagePath = downloadUrl;
+          _isImageLoading = false;
+        });
+
+        print('Successfully cached image to Firebase Storage: $downloadUrl');
+      } else {
+        print('Failed to download Google image: ${response.statusCode}');
+        setState(() {
+          _isImageLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error caching Google image: $e');
+      setState(() {
+        _isImageLoading = false;
+      });
+      // Keep using the original URL if caching fails
+    }
   }
 
   Future<void> _pickImage() async {
@@ -80,35 +187,71 @@ class _EditUserScreenState extends State<EditUserScreen> {
     }
   }
 
+  String _formatTimestamp(dynamic timestamp) {
+    try {
+      if (timestamp == null) return "N/A";
+
+      int millis;
+      if (timestamp is int) {
+        millis = timestamp;
+      } else if (timestamp is double) {
+        millis = timestamp.toInt();
+      } else if (timestamp is Map && timestamp.containsKey('_seconds')) {
+        // sometimes Firebase stores in weird map structure
+        millis = (timestamp['_seconds'] * 1000).toInt();
+      } else if (timestamp is Timestamp) {
+        // Firestore Timestamp type
+        millis = timestamp.millisecondsSinceEpoch;
+      } else {
+        return "Invalid Date";
+      }
+
+      final date = DateTime.fromMillisecondsSinceEpoch(millis);
+      return "${date.day}-${date.month}-${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}";
+    } catch (e) {
+      return "Invalid Date";
+    }
+  }
+
   Future<void> _updateUser() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
       _isLoading = true;
     });
-
+    print(_userIsVerified);
     try {
       final updatedData = {
-        "userName": _nameController.text.trim(),
-        "userContact": _phoneController.text.trim(),
-        "userMail": _emailController.text.trim(),
-        "userAddress": _addressController.text.trim(),
-        "userDOB": {
-          "month": _month,
-          "day": _day,
-          "year": _year,
-        },
+        // "userName": _nameController.text.trim(),
+        // "userContact": _phoneController.text.trim(),
+        // "userMail": _emailController.text.trim(),
+        //
         "userIsVerified": _userIsVerified,
-        "userProfileImage": _uploadedImagePath ?? "",
-        "updatedAt": DateTime.now().millisecondsSinceEpoch,
+        "userPostLimit":
+            int.tryParse(_userPostLimitController.text.trim()) ?? 0,
+        "userUpdatePostLimit":
+            int.tryParse(_userUpdatePostLimitController.text.trim()) ?? 0,
+        "userFollowing":
+            int.tryParse(_userFollowingController.text.trim()) ?? 0,
+        "userTotalPostsTime":
+            int.tryParse(_userTotalPostsTimeController.text.trim()) ?? 0,
+        "userTotalPostsExpiryTime": DateTime.now()
+            .add(Duration(days: int.tryParse(_userTotalPostsTimeController.text.trim()) ?? 0))
+            .millisecondsSinceEpoch,
+        // "userProfileImage": _uploadedImagePath ?? "",
+        // "updatedAt": DateTime.now().millisecondsSinceEpoch,
       };
 
-      await _dbRef.update(updatedData).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw Exception('Connection timeout. Please check your internet connection.');
-        },
-      );
+      await _dbRef
+          .update(updatedData)
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw Exception(
+                'Connection timeout. Please check your internet connection.',
+              );
+            },
+          );
 
       if (!mounted) return;
 
@@ -163,8 +306,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
       debugPrint('Error updating user: $e');
     }
   }
-
-  Widget _buildTextField({
+  Widget _buildTextField1({
     required String label,
     required TextEditingController controller,
     String? Function(String?)? validator,
@@ -175,29 +317,96 @@ class _EditUserScreenState extends State<EditUserScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: const TextStyle(
-                fontSize: 14, fontWeight: FontWeight.w500, color: Colors.black)),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: controller,
-          validator: validator,
-          keyboardType: keyboardType,
-          obscureText: obscureText,
-          enabled: !_isLoading,
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: Colors.grey[50],
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey[300]!),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 5),
+
+        SizedBox(
+          height: 40,
+          child: TextFormField(
+             readOnly: true,
+            style: TextStyle(fontSize: 12),
+            controller: controller,
+            validator: validator,
+            keyboardType: keyboardType,
+            obscureText: obscureText,
+            enabled: !_isLoading,
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Colors.grey[50],
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(5),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.green, width: 2),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 0,
+              ),
+              suffixIcon: suffixIcon,
             ),
-            focusedBorder: const OutlineInputBorder(
-              borderSide: BorderSide(color: Colors.green, width: 2),
+          ),
+        ),
+      ],
+    );
+  }
+  Widget _buildTextField({
+    required String label,
+    required TextEditingController controller,
+    String? Function(String?)? validator,
+    TextInputType? keyboardType,
+    bool obscureText = false,
+    Widget? suffixIcon,
+    List<TextInputFormatter>? inputFormatters,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 5),
+
+        SizedBox(
+          height: 40,
+          child: TextFormField(
+            // readOnly: true,
+            style: TextStyle(fontSize: 12),
+            controller: controller,
+            validator: validator,
+            keyboardType: keyboardType,
+            obscureText: obscureText,
+            enabled: !_isLoading,
+            inputFormatters: inputFormatters,
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Colors.grey[50],
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(5),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.green, width: 2),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 0,
+              ),
+              suffixIcon: suffixIcon,
             ),
-            contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            suffixIcon: suffixIcon,
           ),
         ),
       ],
@@ -213,12 +422,17 @@ class _EditUserScreenState extends State<EditUserScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: const TextStyle(
-                fontSize: 14, fontWeight: FontWeight.w500, color: Colors.black)),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.black,
+          ),
+        ),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
-          value: value,
+          initialValue: value,
           onChanged: _isLoading ? null : onChanged,
           items: items
               .map((e) => DropdownMenuItem(value: e, child: Text(e)))
@@ -233,8 +447,10 @@ class _EditUserScreenState extends State<EditUserScreen> {
             focusedBorder: const OutlineInputBorder(
               borderSide: BorderSide(color: Colors.green, width: 2),
             ),
-            contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 12,
+            ),
           ),
         ),
       ],
@@ -247,167 +463,194 @@ class _EditUserScreenState extends State<EditUserScreen> {
     required void Function(bool) onChanged,
     String? subtitle,
   }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(width: 1, color: Colors.black54),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 5),
+        GestureDetector(
+          onTap: _isLoading ? null : () => onChanged(!value),
+          child: Container(
+            height: 40,
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 6,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(width: 1, color: Colors.black54),
+            ),
+            child: Row(
               children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+
+                      if (subtitle != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            subtitle,
+                            style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-                if (subtitle != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
+
+                const SizedBox(width: 12),
+
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    width: 60,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      color: value ? Colors.green : Colors.grey[300],
+                    ),
+                    child: Stack(
+                      children: [
+                        // ON/OFF text
+                        AnimatedPositioned(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                          left: value ? 10 : null,
+                          right: value ? null : 10,
+                          top: 0,
+                          bottom: 0,
+                          child: Center(
+                            child: Text(
+                              value ? 'ON' : 'OFF',
+                              style: TextStyle(
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold,
+                                color: value ? Colors.white : Colors.grey[600],
+                              ),
+                            ),
+                          ),
+                        ),
+                        // White circle thumb
+                        AnimatedPositioned(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                          left: value ? 35 : 5,
+                          top: 4,
+                          child: Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.2),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+
               ],
             ),
           ),
-          const SizedBox(width: 12),
-          GestureDetector(
-            onTap: _isLoading ? null : () => onChanged(!value),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-              width: 60,
-              height: 32,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                color: value ? Colors.green : Colors.grey[300],
-              ),
-              child: Stack(
-                children: [
-                  // ON/OFF text
-                  AnimatedPositioned(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    left: value ? 8 : null,
-                    right: value ? null : 8,
-                    top: 0,
-                    bottom: 0,
-                    child: Center(
-                      child: Text(
-                        value ? 'ON' : 'OFF',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: value ? Colors.white : Colors.grey[600],
-                        ),
-                      ),
-                    ),
-                  ),
-                  // White circle thumb
-                  AnimatedPositioned(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    left: value ? 32 : 4,
-                    top: 4,
-                    child: Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.2),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildImagePreview() {
-    // Priority: 1. Newly picked bytes (web), 2. Newly picked file path (mobile), 3. Existing URL
-    if (kIsWeb && _uploadedImageBytes != null) {
-      return Image.memory(
-        _uploadedImageBytes!,
-        fit: BoxFit.cover,
-        height: 150,
-        width: double.infinity,
-      );
-    } else if (!kIsWeb && _uploadedImagePath != null && !_uploadedImagePath!.startsWith('http')) {
-      return Image.file(
-        File(_uploadedImagePath!),
-        fit: BoxFit.cover,
-        height: 150,
-        width: double.infinity,
-      );
-    } else if (_uploadedImagePath != null && _uploadedImagePath!.startsWith('http')) {
-      // Load existing network image
-      return Image.network(
-        _uploadedImagePath!,
-        fit: BoxFit.cover,
-        height: 150,
-        width: double.infinity,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Container(
-            height: 150,
-            color: Colors.grey[200],
-            child: Center(
-              child: CircularProgressIndicator(
-                value: loadingProgress.expectedTotalBytes != null
-                    ? loadingProgress.cumulativeBytesLoaded /
-                    loadingProgress.expectedTotalBytes!
-                    : null,
+    // Show loading indicator while caching/loading image
+    if (_isImageLoading) {
+      return Container(
+        height: 200,
+        width: 200,
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Colors.green),
+              SizedBox(height: 12),
+              Text(
+                'Loading image...',
+                style: TextStyle(color: Colors.grey[600], fontSize: 12),
               ),
-            ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) {
-          return Container(
-            height: 150,
-            color: Colors.grey[300],
-            child: Center(
-              child: Image.asset(
-                "images/profile.jpg",
-                width: 250,
-                height: 250,
-                fit: BoxFit.cover,
-              ),
-            ),
-          );
-        },
+            ],
+          ),
+        ),
       );
     }
 
-    // Placeholder when no image
-    return Container(
+    // Check if image URL exists and is NOT from googleusercontent (to avoid 429 errors)
+    if (_uploadedImagePath != null &&
+        _uploadedImagePath!.isNotEmpty &&
+        !_uploadedImagePath!.contains('googleusercontent.com')) {
+      print('Attempting to load image from: $_uploadedImagePath');
+      return SizedBox(
+        height: 210,
+        width: 260,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.network(
+            _uploadedImagePath!,
+            fit: BoxFit.cover,
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) {
+                return child;
+              }
+              return Container(
+                color: Colors.grey[200],
+                child: Center(
+                  child: CircularProgressIndicator(
+                    color: Colors.green,
+                    value: loadingProgress.expectedTotalBytes != null
+                        ? loadingProgress.cumulativeBytesLoaded /
+                              loadingProgress.expectedTotalBytes!
+                        : null,
+                  ),
+                ),
+              );
+            },
+            errorBuilder: (context, error, stackTrace) {
+              print('Error loading image: $error');
+              return Image.asset(
+                "images/profile.jpg",
+                width: 200,
+                height: 200,
+                fit: BoxFit.cover,
+              );
+            },
+          ),
+        ),
+      );
+    }
+
+    // For Google images or no image, show default profile image
+    return SizedBox(
       height: 200,
       width: 200,
-      color: Colors.grey[300],
-      child: Center(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
         child: Image.asset(
           "images/profile.jpg",
           width: 200,
@@ -417,6 +660,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
       ),
     );
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -424,18 +668,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SideMenu(
-            selectedIndex: 2, // Current screen index
-            onItemTapped: (index) {
-              // Navigate back to dashboard with selected index
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (context) => DashboardScreen(initialIndex: 0),
-                ),
-              );
-
-            },
-          ),
+          SideMenu(),
 
           Expanded(
             flex: 3,
@@ -459,24 +692,27 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                   Row(
                                     children: [
                                       IconButton(
-                                        icon: const Icon(Icons.arrow_back,
-                                            color: Colors.black),
+                                        icon: const Icon(
+                                          Icons.arrow_back,
+                                          color: Colors.black,
+                                        ),
                                         onPressed: _isLoading
                                             ? null
                                             : () {
-                                          Navigator.pop(context);
-                                        },
+                                                Navigator.pop(context);
+                                              },
                                       ),
                                       Text(
-                                        "Edit Customer",
+                                        'Edit Customer',
                                         style: Theme.of(context)
                                             .textTheme
                                             .headlineLarge
                                             ?.copyWith(
-                                          color: Colors.black,
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                              color: Colors.black,
+                                              fontWeight: FontWeight.w900,
+                                            ),
                                       ),
+                                      const SizedBox(height: 5),
                                     ],
                                   ),
                                   const SizedBox(height: 8),
@@ -486,8 +722,12 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                         .textTheme
                                         .titleSmall
                                         ?.copyWith(
-                                      color: Colors.grey,
-                                    ),
+                                          color: Colors.grey,
+                                          fontSize: 10,
+                                          letterSpacing: 0.5,
+                                          fontWeight: FontWeight.normal,
+                                          fontFamily: 'Roboto',
+                                        ),
                                   ),
                                 ],
                               ),
@@ -504,7 +744,6 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(8),
                                     color: Colors.white,
-
                                   ),
                                   child: Form(
                                     key: _formKey,
@@ -516,8 +755,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                               child: _buildTextField(
                                                 label: "Enter Name*",
                                                 controller: _nameController,
-                                                validator: (v) =>
-                                                v!.isEmpty ? "Enter name" : null,
+                                                validator: (v) => v!.isEmpty
+                                                    ? "Enter name"
+                                                    : null,
                                               ),
                                             ),
                                             const SizedBox(width: 10),
@@ -526,7 +766,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                                 label: "Email*",
                                                 controller: _emailController,
                                                 keyboardType:
-                                                TextInputType.emailAddress,
+                                                    TextInputType.emailAddress,
                                                 validator: (v) {
                                                   if (v == null || v.isEmpty) {
                                                     return "Enter email";
@@ -540,124 +780,299 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(height: 20),
+                                        const SizedBox(height: 10),
                                         Row(
                                           children: [
                                             Expanded(
                                               child: _buildTextField(
                                                 label: "Phone Number",
                                                 controller: _phoneController,
-                                                keyboardType: TextInputType.phone,
+                                                keyboardType:
+                                                    TextInputType.phone,
+                                                inputFormatters: [
+                                                  FilteringTextInputFormatter.allow(
+                                                    RegExp(r'^\+?[0-9]*$'),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    "Login Date",
+                                                    style: const TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                      color: Colors.black,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 5),
+
+                                                  Container(
+                                                    height: 40,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 12,
+                                                          vertical: 0,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      border: Border.all(
+                                                        color: Colors
+                                                            .grey
+                                                            .shade400,
+                                                      ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            5,
+                                                          ),
+                                                      color:
+                                                          Colors.grey.shade100,
+                                                    ),
+                                                    child: Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment
+                                                              .spaceBetween,
+                                                      children: [
+                                                        Text(
+                                                          loginDate,
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 12,
+                                                                color: Colors
+                                                                    .black87,
+                                                              ),
+                                                        ),
+                                                        const Icon(
+                                                          Icons
+                                                              .calendar_today_outlined,
+                                                          color: Colors.grey,
+                                                          size: 14,
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+
+                                        const SizedBox(height: 10),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: _buildTextField(
+                                                label: "User Post Limit",
+                                                controller:
+                                                    _userPostLimitController,
+                                                keyboardType:
+                                                    TextInputType.number,
+                                                inputFormatters: [
+                                                  FilteringTextInputFormatter.digitsOnly
+                                                ],
+                                                validator: (v) {
+                                                  if (v != null &&
+                                                      v.isNotEmpty) {
+                                                    if (int.tryParse(v) ==
+                                                        null) {
+                                                      return "Enter valid number";
+                                                    }
+                                                  }
+                                                  return null;
+                                                },
                                               ),
                                             ),
                                             const SizedBox(width: 10),
                                             Expanded(
                                               child: _buildTextField(
-                                                label: "Address",
-                                                controller: _addressController,
+                                                label: "User Update Post Limit",
+                                                controller:
+                                                    _userUpdatePostLimitController,
+                                                keyboardType:
+                                                    TextInputType.number,
+                                                inputFormatters: [
+                                                  FilteringTextInputFormatter.digitsOnly
+                                                ],
+                                                validator: (v) {
+                                                  if (v != null &&
+                                                      v.isNotEmpty) {
+                                                    if (int.tryParse(v) ==
+                                                        null) {
+                                                      return "Enter valid number";
+                                                    }
+                                                  }
+                                                  return null;
+                                                },
                                               ),
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(height: 20),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                                          decoration: BoxDecoration(
-                                            border: Border.all(color: Colors.grey.shade400),
-                                            borderRadius: BorderRadius.circular(8),
-                                            color: Colors.grey.shade100,
-                                          ),
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                "$_month, ${_day.padLeft(2, '0')}, $_year",
-                                                style: const TextStyle(
-                                                  fontSize: 16,
-                                                  color: Colors.black87,
-                                                ),
+                                        const SizedBox(height: 10),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: _buildTextField(
+                                                label: "User Following",
+                                                controller:
+                                                    _userFollowingController,
+                                                keyboardType:
+                                                    TextInputType.number,
+                                                inputFormatters: [
+                                                  FilteringTextInputFormatter.digitsOnly
+                                                ],
+                                                validator: (v) {
+                                                  if (v != null &&
+                                                      v.isNotEmpty) {
+                                                    if (int.tryParse(v) ==
+                                                        null) {
+                                                      return "Enter valid number";
+                                                    }
+                                                  }
+                                                  return null;
+                                                },
                                               ),
-                                              const Icon(
-                                                Icons.calendar_today_outlined,
-                                                color: Colors.grey,
-                                                size: 18,
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: _buildTextField(
+                                                label: "User Total Post Timer",
+                                                controller:
+                                                    _userTotalPostsTimeController,
+                                                keyboardType:
+                                                    TextInputType.number,
+                                                inputFormatters: [
+                                                  FilteringTextInputFormatter.digitsOnly
+                                                ],
+                                                validator: (v) {
+                                                  if (v != null &&
+                                                      v.isNotEmpty) {
+                                                    if (int.tryParse(v) ==
+                                                        null) {
+                                                      return "Enter valid number";
+                                                    }
+                                                  }
+                                                  return null;
+                                                },
                                               ),
-                                            ],
-                                          ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.start,
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Expanded(
+                                              child: _buildSwitchField(
+                                                label: "User Verified",
+                                                subtitle:
+                                                "Enable verification status for this customer",
+                                                value: _userIsVerified,
+                                                onChanged: (val) {
+                                                  print(
+                                                    "before update: $_userIsVerified",
+                                                  );
+                                                  setState(() {
+                                                    _userIsVerified = val;
+                                                    print(
+                                                      "After update: $_userIsVerified",
+                                                    );
+                                                  });
+                                                },
+                                              ),
+                                            )
+                                          ],
                                         ),
 
-                                        const SizedBox(height: 20),
-                                        _buildSwitchField(
-                                          label: "User Verified",
-                                          subtitle:
-                                          "Enable verification status for this customer",
-                                          value: _userIsVerified,
-                                          onChanged: (val) {
-                                            setState(() {
-                                              _userIsVerified = val;
-                                            });
-                                          },
-                                        ),
+
                                         const SizedBox(height: 20),
                                         Row(
                                           children: [
                                             Expanded(
-                                              child: OutlinedButton(
-                                                onPressed: _isLoading
-                                                    ? null
-                                                    : () => Navigator.pop(context),
-                                                style: OutlinedButton.styleFrom(
-                                                  padding:
-                                                  const EdgeInsets.symmetric(
-                                                      vertical: 16),
-                                                  side: BorderSide(
-                                                      color: Colors.grey[400]!),
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                    BorderRadius.circular(8),
+                                              child: SizedBox(
+                                                height: 40,
+                                                child: OutlinedButton(
+                                                  onPressed: _isLoading
+                                                      ? null
+                                                      : () => Navigator.pop(
+                                                          context,
+                                                        ),
+                                                  style: OutlinedButton.styleFrom(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          vertical: 0,
+                                                        ),
+                                                    side: BorderSide(
+                                                      color: Colors.grey[400]!,
+                                                    ),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            5,
+                                                          ),
+                                                    ),
                                                   ),
-                                                ),
-                                                child: const Text(
-                                                  "CANCEL",
-                                                  style: TextStyle(
-                                                    color: Colors.black54,
-                                                    fontWeight: FontWeight.w600,
+                                                  child: const Text(
+                                                    "CANCEL",
+                                                    style: TextStyle(
+                                                      color: Colors.black54,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      fontSize: 12,
+                                                    ),
                                                   ),
                                                 ),
                                               ),
                                             ),
                                             const SizedBox(width: 12),
                                             Expanded(
-                                              child: ElevatedButton(
-                                                onPressed:
-                                                _isLoading ? null : _updateUser,
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: Colors.green,
-                                                  padding:
-                                                  const EdgeInsets.symmetric(
-                                                      vertical: 16),
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                    BorderRadius.circular(8),
+                                              child: SizedBox(
+                                                height: 40,
+                                                child: ElevatedButton(
+                                                  onPressed: _isLoading
+                                                      ? null
+                                                      : _updateUser,
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor:
+                                                        Colors.green,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          vertical: 0,
+                                                        ),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            5,
+                                                          ),
+                                                    ),
                                                   ),
-                                                ),
-                                                child: _isLoading
-                                                    ? const SizedBox(
-                                                  height: 20,
-                                                  width: 20,
-                                                  child:
-                                                  CircularProgressIndicator(
-                                                    color: Colors.white,
-                                                    strokeWidth: 2,
-                                                  ),
-                                                )
-                                                    : const Text(
-                                                  "SAVE CHANGES",
-                                                  style: TextStyle(
-                                                    color: Colors.white,
-                                                    fontWeight:
-                                                    FontWeight.w600,
-                                                  ),
+                                                  child: _isLoading
+                                                      ? const SizedBox(
+                                                          height: 15,
+                                                          width: 15,
+                                                          child:
+                                                              CircularProgressIndicator(
+                                                                color: Colors
+                                                                    .white,
+                                                                strokeWidth: 2,
+                                                              ),
+                                                        )
+                                                      : const Text(
+                                                          "SAVE CHANGES",
+                                                          style: TextStyle(
+                                                            color: Colors.white,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
                                                 ),
                                               ),
                                             ),
@@ -701,12 +1116,12 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                     // )
                                   ],
                                 ),
-                              )
+                              ),
                             ],
                           ),
                         ],
                       ),
-                    )
+                    ),
                   ],
                 ),
               ),
@@ -722,7 +1137,11 @@ class _EditUserScreenState extends State<EditUserScreen> {
     _nameController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
-    _addressController.dispose();
+    _userPostLimitController.dispose();
+    _userUpdatePostLimitController.dispose();
+    _userFollowingController.dispose();
+    _userTotalPostsTimeController.dispose();
+    //_addressController.dispose();
     super.dispose();
   }
 }

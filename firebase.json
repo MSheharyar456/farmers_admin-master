@@ -1,1 +1,41 @@
-{"hosting":{"source":".","ignore":["firebase.json","**/.*","**/node_modules/**"],"frameworksBackend":{"region":"asia-east1"}},"flutter":{"platforms":{"dart":{"lib/firebase_options.dart":{"projectId":"testing-79c4f","configurations":{"android":"1:611277588462:android:dce16489549a9e57a5b0ff","web":"1:611277588462:web:638aaf7c5cc60e75a5b0ff","windows":"1:611277588462:web:7aa39f83db7baa5aa5b0ff"}}},"android":{"default":{"projectId":"testing-79c4f","appId":"1:611277588462:android:dce16489549a9e57a5b0ff","fileOutput":"android/app/google-services.json"}}}},"functions":[{"source":"functions","codebase":"default","ignore":["node_modules",".git","firebase-debug.log","firebase-debug.*.log","*.local"]}]}
+{
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs20"
+  },
+  "hosting": {
+    "site": "mahsolek-8417b",
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
+  "flutter": {
+    "platforms": {
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "mahsolek-8417b",
+          "configurations": {
+            "ios": "1:992806521648:ios:7e7d4fe7a9b608403296f5",
+            "web": "1:992806521648:web:a3d0842e5f838c5f3296f5"
+          }
+        }
+      },
+      "android": {
+        "default": {
+          "projectId": "testing-79c4f",
+          "appId": "1:611277588462:android:dce16489549a9e57a5b0ff",
+          "fileOutput": "android/app/google-services.json"
+        }
+      }
+    }
+  }
+}

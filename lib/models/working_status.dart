@@ -4,6 +4,7 @@ class WorkingStatus {
   final bool isSomethingWrong;
   final String? workingDetails;
   final String? workingTitle;
+  final int? appVersionCode;
 
   WorkingStatus({
     this.statusId,
@@ -11,6 +12,7 @@ class WorkingStatus {
     required this.isSomethingWrong,
     this.workingDetails,
     this.workingTitle,
+    this.appVersionCode,
   });
 
   factory WorkingStatus.fromMap(String id, Map<dynamic, dynamic> map) {
@@ -20,6 +22,9 @@ class WorkingStatus {
       isSomethingWrong: map['isSomethingWrong'] ?? false,
       workingDetails: map['workingDetails']?.toString(),
       workingTitle: map['workingTitle']?.toString(),
+      appVersionCode: map['appVersionCode'] != null
+          ? int.tryParse(map['appVersionCode'].toString())
+          : null,
     );
   }
 
@@ -29,6 +34,7 @@ class WorkingStatus {
       'isSomethingWrong': isSomethingWrong,
       'workingDetails': workingDetails,
       'workingTitle': workingTitle,
+      'appVersionCode': appVersionCode,
     };
   }
 
@@ -38,6 +44,7 @@ class WorkingStatus {
     bool? isSomethingWrong,
     String? workingDetails,
     String? workingTitle,
+    int? appVersionCode,
   }) {
     return WorkingStatus(
       statusId: statusId ?? this.statusId,
@@ -45,6 +52,7 @@ class WorkingStatus {
       isSomethingWrong: isSomethingWrong ?? this.isSomethingWrong,
       workingDetails: workingDetails ?? this.workingDetails,
       workingTitle: workingTitle ?? this.workingTitle,
+      appVersionCode: appVersionCode ?? this.appVersionCode,
     );
   }
 }

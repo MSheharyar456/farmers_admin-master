@@ -18,7 +18,7 @@ class FirebaseService {
   // Get user name by ID
   Future<String> getUserName(String userId) async {
     try {
-      final snapshot = await _dbRef.child('UsersAuthData/$userId/userName').get();
+      final snapshot = await _dbRef.child('usersAuthData/$userId/userName').get();
       if (snapshot.exists) {
         return snapshot.value.toString();
       }
@@ -44,8 +44,8 @@ class FirebaseService {
     // Users calculation
     int totalUsers = 0;
     int pendingRequests = 0;
-    if (root["UsersAuthData"] != null) {
-      final usersData = Map<String, dynamic>.from(root["UsersAuthData"]);
+    if (root["usersAuthData"] != null) {
+      final usersData = Map<String, dynamic>.from(root["usersAuthData"]);
       totalUsers = usersData.length;
 
       usersData.forEach((uid, value) {

@@ -16,7 +16,6 @@ class EditFarmingTipScreen extends StatefulWidget {
 
 class _EditFarmingTipScreenState extends State<EditFarmingTipScreen> {
   final _formKey = GlobalKey<FormState>();
-  late DatabaseReference _dbRef;
 
   late TextEditingController _englishController;
   late TextEditingController _arabicController;
@@ -27,9 +26,6 @@ class _EditFarmingTipScreenState extends State<EditFarmingTipScreen> {
   @override
   void initState() {
     super.initState();
-
-    final tipId = widget.tip.tipId;
-    _dbRef = FirebaseDatabase.instance.ref().child('farminTipOfDay/$tipId');
 
     _englishController = TextEditingController(text: widget.tip.farmingTipEnglish ?? '');
     _arabicController = TextEditingController(text: widget.tip.farmingTipArabic ?? '');
@@ -49,9 +45,114 @@ class _EditFarmingTipScreenState extends State<EditFarmingTipScreen> {
   Future<void> _updateFarmingTip() async {
     if (!_formKey.currentState!.validate()) return;
 
+    var tipId = widget.tip.tipId;
+    if (tipId == null || tipId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Error: Tip ID is missing. Cannot update tip.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
+      final dbRef = FirebaseDatabase.instance.ref().child('farminTipOfDay');
+      
+      // If tipId is "default", we need to find the actual key in Firebase
+      if (tipId == 'default') {
+        final snapshot = await dbRef.get();
+        if (snapshot.exists && snapshot.value != null) {
+          final data = snapshot.value;
+          
+          // Check if data is a Map with multiple tips
+          if (data is Map) {
+            // Try to find the tip that matches the current tip's content
+            String? actualKey;
+            data.forEach((key, value) {
+              if (value is Map) {
+                final tipMap = Map<dynamic, dynamic>.from(value);
+                // Match by comparing multiple fields to ensure we find the correct tip
+                final matchesEnglish = tipMap['farmingTipEnglish']?.toString().trim() == 
+                    widget.tip.farmingTipEnglish?.trim();
+                final matchesArabic = tipMap['farmingTipArabic']?.toString().trim() == 
+                    widget.tip.farmingTipArabic?.trim();
+                final matchesGerman = tipMap['farmingTipGerman']?.toString().trim() == 
+                    widget.tip.farmingTipGerman?.trim();
+                final matchesTurkish = tipMap['farmingTipTurkish']?.toString().trim() == 
+                    widget.tip.farmingTipTurkish?.trim();
+                
+                // If at least 2 fields match, consider it a match
+                int matchCount = 0;
+                if (matchesEnglish) matchCount++;
+                if (matchesArabic) matchCount++;
+                if (matchesGerman) matchCount++;
+                if (matchesTurkish) matchCount++;
+                
+                if (matchCount >= 2 && actualKey == null) {
+                  actualKey = key.toString();
+                }
+              }
+            });
+            
+            // If we found a matching key, use it; otherwise check if it's a flat structure
+            if (actualKey != null) {
+              tipId = actualKey;
+            } else if ((data.containsKey('farmingTipEnglish') || 
+                        data.containsKey('farmingTipArabic'))) {
+              // Flat structure - update at root level
+              final updatedData = {
+                'farmingTipEnglish': _englishController.text.trim(),
+                'farmingTipArabic': _arabicController.text.trim(),
+                'farmingTipGerman': _germanController.text.trim(),
+                'farmingTipTurkish': _turkishController.text.trim(),
+                'updatedAt': DateTime.now().millisecondsSinceEpoch,
+              };
+              
+              await dbRef.update(updatedData).timeout(
+                const Duration(seconds: 30),
+                onTimeout: () {
+                  throw Exception('Connection timeout. Please check your internet connection.');
+                },
+              );
+              
+              if (!mounted) return;
+              setState(() => _isLoading = false);
+              
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Farming tip updated successfully!'),
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+              
+              await Future.delayed(const Duration(milliseconds: 500));
+              if (mounted) {
+                Navigator.pop(context, true);
+              }
+              return;
+            } else {
+              throw Exception('Could not find the tip to update in Firebase.');
+            }
+          }
+        } else {
+          throw Exception('No data found in Firebase.');
+        }
+      }
+      
+      // At this point, tipId should not be null (we checked at the start and handled "default" case)
+      if (tipId == null || tipId.isEmpty) {
+        throw Exception('Invalid tip ID. Cannot update tip.');
+      }
+      
+      // Get reference to the specific tip using the tipId (using ! because we checked it's not null above)
+      final finalTipId = tipId;
+      final tipRef = dbRef.child(finalTipId);
+
+
       final updatedData = {
         'farmingTipEnglish': _englishController.text.trim(),
         'farmingTipArabic': _arabicController.text.trim(),
@@ -60,7 +161,8 @@ class _EditFarmingTipScreenState extends State<EditFarmingTipScreen> {
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
       };
 
-      await _dbRef.update(updatedData).timeout(
+      // Use update() to update only the specified fields in the existing node
+      await tipRef.update(updatedData).timeout(
         const Duration(seconds: 30),
         onTimeout: () {
           throw Exception('Connection timeout. Please check your internet connection.');
@@ -131,13 +233,14 @@ class _EditFarmingTipScreenState extends State<EditFarmingTipScreen> {
         Text(
           label,
           style: const TextStyle(
-            fontSize: 14,
+            fontSize: 12,
             fontWeight: FontWeight.w500,
             color: Colors.black,
           ),
         ),
         const SizedBox(height: 8),
         TextFormField(
+          style: TextStyle(fontSize: 12),
           controller: controller,
           validator: validator,
           maxLines: maxLines,
@@ -148,7 +251,7 @@ class _EditFarmingTipScreenState extends State<EditFarmingTipScreen> {
             filled: true,
             fillColor: Colors.grey[50],
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(5),
               borderSide: BorderSide(color: Colors.grey[300]!),
             ),
             focusedBorder: const OutlineInputBorder(
@@ -169,15 +272,15 @@ class _EditFarmingTipScreenState extends State<EditFarmingTipScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SideMenu(
-            selectedIndex: 4, // Current screen index
-            onItemTapped: (index) {
-              // Navigate back to dashboard with selected index
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (context) => DashboardScreen(initialIndex: 0),
-                ),
-              );
-            },
+            // selectedIndex: 4, // Current screen index
+            // onItemTapped: (index) {
+            //   // Navigate back to dashboard with selected index
+            //   Navigator.of(context).pushReplacement(
+            //     MaterialPageRoute(
+            //       builder: (context) => DashboardScreen(initialIndex: 0),
+            //     ),
+            //   );
+            // },
           ),
           Expanded(
             flex: 3,
@@ -206,25 +309,21 @@ class _EditFarmingTipScreenState extends State<EditFarmingTipScreen> {
                                         onPressed: _isLoading ? null : () => Navigator.pop(context),
                                       ),
                                       Text(
-                                        "Edit Farming Tip",
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .headlineLarge
-                                            ?.copyWith(
+                                        'Edit Farming Tip',
+                                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                                           color: Colors.black,
-                                          fontWeight: FontWeight.bold,
+                                          fontWeight: FontWeight.w900,
                                         ),
                                       ),
+
                                     ],
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    "Dashboard / Farming Tips List / Edit Tip",
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleSmall
-                                        ?.copyWith(color: Colors.grey),
+                                    'Dashboard / Farming Tips List / Edit Tip',
+                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Colors.grey, fontSize: 10, letterSpacing: 0.5, fontWeight: FontWeight.normal, fontFamily: 'Roboto'),
                                   ),
+
                                 ],
                               ),
                             ],
@@ -239,9 +338,10 @@ class _EditFarmingTipScreenState extends State<EditFarmingTipScreen> {
                               Expanded(
                                 flex: 3,
                                 child: Container(
+
                                   padding: const EdgeInsets.all(24),
                                   decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
+                                    borderRadius: BorderRadius.circular(5),
                                     color: Colors.white,
                                   ),
                                   child: Form(
@@ -322,49 +422,57 @@ class _EditFarmingTipScreenState extends State<EditFarmingTipScreen> {
                                         Row(
                                           children: [
                                             Expanded(
-                                              child: OutlinedButton(
-                                                onPressed: _isLoading ? null : () => Navigator.pop(context),
-                                                style: OutlinedButton.styleFrom(
-                                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                                  side: BorderSide(color: Colors.grey[400]!),
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius: BorderRadius.circular(8),
+                                              child: SizedBox(
+                                                height: 38,
+                                                child: OutlinedButton(
+                                                  onPressed: _isLoading ? null : () => Navigator.pop(context),
+                                                  style: OutlinedButton.styleFrom(
+                                                    padding: const EdgeInsets.symmetric(vertical: 5),
+                                                    side: BorderSide(color: Colors.grey[400]!),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius: BorderRadius.circular(5),
+                                                    ),
                                                   ),
-                                                ),
-                                                child: const Text(
-                                                  'CANCEL',
-                                                  style: TextStyle(
-                                                    color: Colors.black54,
-                                                    fontWeight: FontWeight.w600,
+                                                  child: const Text(
+                                                    'CANCEL',
+                                                    style: TextStyle(
+                                                      color: Colors.black54,
+                                                      fontWeight: FontWeight.w600,
+                                                      fontSize: 12
+                                                    ),
                                                   ),
                                                 ),
                                               ),
                                             ),
                                             const SizedBox(width: 12),
                                             Expanded(
-                                              child: ElevatedButton(
-                                                onPressed: _isLoading ? null : _updateFarmingTip,
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: Colors.green,
-                                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius: BorderRadius.circular(8),
+                                              child: SizedBox(
+                                                height: 38,
+                                                child: ElevatedButton(
+                                                  onPressed: _isLoading ? null : _updateFarmingTip,
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: Colors.green,
+                                                    padding: const EdgeInsets.symmetric(vertical: 5),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius: BorderRadius.circular(8),
+                                                    ),
                                                   ),
-                                                ),
-                                                child: _isLoading
-                                                    ? const SizedBox(
-                                                  height: 20,
-                                                  width: 20,
-                                                  child: CircularProgressIndicator(
-                                                    color: Colors.white,
-                                                    strokeWidth: 2,
-                                                  ),
-                                                )
-                                                    : const Text(
-                                                  'SAVE CHANGES',
-                                                  style: TextStyle(
-                                                    color: Colors.white,
-                                                    fontWeight: FontWeight.w600,
+                                                  child: _isLoading
+                                                      ? const SizedBox(
+                                                    height: 15,
+                                                    width: 15,
+                                                    child: CircularProgressIndicator(
+                                                      color: Colors.white,
+                                                      strokeWidth: 2,
+                                                    ),
+                                                  )
+                                                      : const Text(
+                                                    'SAVE CHANGES',
+                                                    style: TextStyle(
+                                                      color: Colors.white,
+                                                      fontWeight: FontWeight.w600,
+                                                      fontSize: 12
+                                                    ),
                                                   ),
                                                 ),
                                               ),

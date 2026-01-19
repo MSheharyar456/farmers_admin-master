@@ -1,6 +1,5 @@
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
-import 'package:farmers_admin/screens/dashboard/dashboard.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
@@ -36,6 +35,7 @@ class _AddFarmingTipScreenState extends State<AddFarmingTipScreen> {
     try {
       final dbRef = FirebaseDatabase.instance.ref().child('farminTipOfDay');
       final newTipRef = dbRef.push();
+
 
       await newTipRef.set({
         'farmingTipEnglish': _englishController.text.trim(),
@@ -152,15 +152,15 @@ class _AddFarmingTipScreenState extends State<AddFarmingTipScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SideMenu(
-            selectedIndex: 4, // Current screen index
-            onItemTapped: (index) {
-              // Navigate back to dashboard with selected index
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (context) => DashboardScreen(initialIndex: 0),
-                ),
-              );
-            },
+            // selectedIndex: 4, // Current screen index
+            // onItemTapped: (index) {
+            //   // Navigate back to dashboard with selected index
+            //   Navigator.of(context).pushReplacement(
+            //     MaterialPageRoute(
+            //       builder: (context) => DashboardScreen(initialIndex: 0),
+            //     ),
+            //   );
+            // },
           ),
 
           Expanded(

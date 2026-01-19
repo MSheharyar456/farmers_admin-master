@@ -7,7 +7,7 @@ class UserRepository {
 
   Stream<List<UserModel>> getUsersStream() {
     return _database
-        .ref('UsersAuthData')
+        .ref('usersAuthData')
         .onValue
         .map((event) {
       if (!event.snapshot.exists || event.snapshot.value == null) {
@@ -24,7 +24,7 @@ class UserRepository {
   }
 
   Future<void> deleteUser(String uid) async {
-    await _database.ref('UsersAuthData/$uid').remove();
+    await _database.ref('usersAuthData/$uid').remove();
   }
 }
 

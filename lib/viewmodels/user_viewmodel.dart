@@ -1,4 +1,3 @@
-// viewmodels/user_screen_viewmodel.dart
 import 'package:farmers_admin/models/pagination_state.dart';
 import 'package:farmers_admin/models/user_model.dart';
 import 'package:farmers_admin/repositories/user_repository.dart';
@@ -12,6 +11,11 @@ class UserScreenViewModel extends ChangeNotifier {
   String _searchQuery = '';
   String? _selectedStatus;
   String? _selectedScore;
+
+  // Pending filter values (not applied until applyFilters() is called)
+  String _pendingSearchQuery = '';
+  String? _pendingStatus;
+
   PaginationState _pagination = PaginationState(
     currentPage: 1,
     rowsPerPage: 10,
@@ -20,12 +24,14 @@ class UserScreenViewModel extends ChangeNotifier {
 
   List<UserModel> _allUsers = [];
   List<UserModel> _filteredUsers = [];
-  bool _isLoading = false;
+  final bool _isLoading = false;
   String? _errorMessage;
 
   // Getters
   String get searchQuery => _searchQuery;
   String? get selectedStatus => _selectedStatus;
+  String get pendingSearchQuery => _pendingSearchQuery;
+  String? get pendingStatus => _pendingStatus;
   String? get selectedScore => _selectedScore;
   PaginationState get pagination => _pagination;
   List<UserModel> get filteredUsers => _filteredUsers;
@@ -33,16 +39,27 @@ class UserScreenViewModel extends ChangeNotifier {
       _filteredUsers.sublist(_pagination.startIndex, _pagination.endIndex);
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  bool get isSourceDataEmpty => _allUsers.isEmpty;
 
   // Setters
   void setSearchQuery(String query) {
-    _searchQuery = query.toLowerCase();
-    _applyFilters();
+    _pendingSearchQuery = query;
+    notifyListeners(); // Notify to update UI, but don't apply filters
   }
 
   void setSelectedStatus(String? status) {
-    _selectedStatus = status;
-    _applyFilters(); // 👈 this line makes filtering work immediately
+    _pendingStatus = status;
+    notifyListeners(); // Notify to update UI, but don't apply filters
+  }
+
+  // Apply pending filters to active filters
+  void applyFilters() {
+    _searchQuery = _pendingSearchQuery.toLowerCase();
+    _selectedStatus = _pendingStatus;
+    _pagination = _pagination.copyWith(
+      currentPage: 1,
+    ); // Reset to first page when applying filters
+    _applyFilters();
   }
 
   void setSelectedScore(String? score) {
@@ -55,10 +72,7 @@ class UserScreenViewModel extends ChangeNotifier {
   }
 
   void setRowsPerPage(int rows) {
-    _pagination = _pagination.copyWith(
-      rowsPerPage: rows,
-      currentPage: 1,
-    );
+    _pagination = _pagination.copyWith(rowsPerPage: rows, currentPage: 1);
     notifyListeners();
   }
 
@@ -74,35 +88,39 @@ class UserScreenViewModel extends ChangeNotifier {
     }
   }
 
-
-
-
   void resetFilters() {
     _searchQuery = '';
     _selectedStatus = null;
     _selectedScore = null;
+    _pendingSearchQuery = '';
+    _pendingStatus = null;
     _pagination = _pagination.copyWith(currentPage: 1);
     _applyFilters();
   }
 
   void loadUsers(List<UserModel> users) {
-    _allUsers = users;
+    // Sort users by login date before setting to _allUsers
+    _allUsers = users
+      ..sort((a, b) => b.userLoginDate.compareTo(a.userLoginDate));
     _pagination = _pagination.copyWith(totalRows: users.length);
     _applyFilters();
   }
+
   bool _matchesFilters(UserModel user) {
     // 🔍 Search filter
     if (_searchQuery.isNotEmpty) {
       final userName = user.userName.toLowerCase();
       final userEmail = user.userEmail.toLowerCase();
-      if (!userName.contains(_searchQuery) && !userEmail.contains(_searchQuery)) {
+      if (!userName.contains(_searchQuery) &&
+          !userEmail.contains(_searchQuery)) {
         return false;
       }
     }
 
     // ✅ Status filter (handles different possible data formats)
     if (_selectedStatus != null && _selectedStatus!.isNotEmpty) {
-      final isVerified = user.isVerified == true ||
+      final isVerified =
+          user.isVerified == true ||
           user.isVerified == 'true' ||
           user.isVerified == '1' ||
           user.isVerified == 1;
@@ -119,13 +137,15 @@ class UserScreenViewModel extends ChangeNotifier {
     return true;
   }
 
-
   void _applyFilters() {
+    // First filter the users
     _filteredUsers = _allUsers.where(_matchesFilters).toList();
 
+    // Sort by login date in descending order (newest first)
+    _filteredUsers.sort((a, b) => b.userLoginDate.compareTo(a.userLoginDate));
+
     // Keep current page valid
-    int totalPages =
-    (_filteredUsers.length / _pagination.rowsPerPage).ceil();
+    int totalPages = (_filteredUsers.length / _pagination.rowsPerPage).ceil();
     int currentPage = _pagination.currentPage;
 
     if (currentPage > totalPages && totalPages > 0) {

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:farmers_admin/auth/auth_screen.dart';
-import 'package:farmers_admin/constants/app_colors.dart';
 
 class AppHeader extends StatelessWidget {
   const AppHeader({super.key});
@@ -21,11 +21,26 @@ class AppHeader extends StatelessWidget {
           final isMedium = w >= 600 && w < 900;
           final showName = w >= 600;
           final horizontalPadding = (w * 0.03).clamp(12.0, 28.0);
-          final avatarRadius = isTiny ? 14.0 : 16.0;
+          final avatarRadius = isTiny ? 10.0 : 12.0;
 
           return Container(
-            color: Theme.of(context).extension<AppColors>()!.brandColor,
-            padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 10),
+            padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 2),
+            decoration: BoxDecoration(
+              color: Color(0xFFF8F9FA),
+              border: Border(
+                bottom: BorderSide(
+                  color: Colors.grey.shade300, // light grey bottom border
+                  width: 1,
+                ),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.1), // subtle shadow
+                  blurRadius: 1,
+                  offset: Offset(0, 1), // shadow below
+                ),
+              ],
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -43,7 +58,7 @@ class AppHeader extends StatelessWidget {
                     margin: EdgeInsets.all(5),
                     child: IconButton(
                       padding: const EdgeInsets.all(8),
-                      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
                       style: ButtonStyle(
                         overlayColor: WidgetStateProperty.resolveWith((states) {
                           if (states.contains(WidgetState.pressed)) {
@@ -54,8 +69,9 @@ class AppHeader extends StatelessWidget {
                       ),
                       icon: SvgPicture.asset(
                         "images/ic_farm_notification.svg",
-                        width: 22,
-                        height: 18,
+                        width: 12,
+                        height: 12,
+
                         colorFilter: const ColorFilter.mode(Colors.black, BlendMode.srcIn),
                       ),
                       onPressed: () {},
@@ -75,8 +91,8 @@ class AppHeader extends StatelessWidget {
                     ),
                     margin: EdgeInsets.all(5),
                     child: IconButton(
-                      padding: const EdgeInsets.all(8),
-                      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                      padding: const EdgeInsets.all(5),
+                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
                       style: ButtonStyle(
                         overlayColor: WidgetStateProperty.resolveWith((states) {
                           if (states.contains(WidgetState.pressed)) {
@@ -87,8 +103,8 @@ class AppHeader extends StatelessWidget {
                       ),
                       icon: SvgPicture.asset(
                         "images/ic_farm_message.svg",
-                        width: 25,
-                        height: 25,
+                        width: 18,
+                        height: 18,
                         colorFilter: const ColorFilter.mode(Colors.black, BlendMode.srcIn),
                       ),
                       onPressed: () {},
@@ -170,11 +186,28 @@ class _ProfileAreaState extends State<_ProfileArea> {
   void initState() {
     super.initState();
     _updateButtonWidth();
+    _fetchUsername();
   }
 
+
+  String? _dbUsername;
+
+  Future<void> _fetchUsername() async {
+    try {
+      final uid = widget.user.uid;
+      final snap = await FirebaseDatabase.instance.ref('adminUsers/$uid/username').get();
+      if (snap.exists && snap.value != null) {
+        setState(() {
+          _dbUsername = snap.value.toString();
+        });
+      }
+    } catch (_) {
+      // ignore errors, fallback to displayName/email
+    }
+  }
   @override
   Widget build(BuildContext context) {
-    final displayName = _cleanName(widget.user.email, widget.user.displayName);
+  final displayName = _dbUsername ?? _cleanName(widget.user.email, widget.user.displayName);
 
     final avatar = (widget.user.photoURL != null && widget.user.photoURL!.isNotEmpty)
         ? CircleAvatar(radius: widget.avatarRadius, backgroundImage: NetworkImage(widget.user.photoURL!))
@@ -192,8 +225,8 @@ class _ProfileAreaState extends State<_ProfileArea> {
     );
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
@@ -241,7 +274,7 @@ class _ProfileAreaState extends State<_ProfileArea> {
                 style: const TextStyle(
                   color: Colors.black,
                   fontWeight: FontWeight.w600,
-                  fontSize: 15,
+                  fontSize: 12,
                 ),
               ),
             const SizedBox(width: 6),
@@ -251,4 +284,5 @@ class _ProfileAreaState extends State<_ProfileArea> {
       ),
     );
   }
+
 }

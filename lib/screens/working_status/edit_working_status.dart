@@ -1,5 +1,4 @@
 import 'package:farmers_admin/models/working_status.dart';
-import 'package:farmers_admin/screens/dashboard/dashboard.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../../common/app_header.dart';
@@ -10,7 +9,8 @@ class EditWorkingStatusScreen extends StatefulWidget {
   const EditWorkingStatusScreen({super.key, required this.status});
 
   @override
-  State<EditWorkingStatusScreen> createState() => _EditWorkingStatusScreenState();
+  State<EditWorkingStatusScreen> createState() =>
+      _EditWorkingStatusScreenState();
 }
 
 class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
@@ -20,6 +20,7 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
   // Controllers
   late TextEditingController _titleController;
   late TextEditingController _detailsController;
+  late TextEditingController _appVersionController;
 
   late bool _isEnableButton;
   late bool _isSomethingWrong;
@@ -34,7 +35,12 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
     _dbRef = FirebaseDatabase.instance.ref().child('workingStatus/$statusId');
 
     _titleController = TextEditingController(text: status.workingTitle ?? '');
-    _detailsController = TextEditingController(text: status.workingDetails ?? '');
+    _detailsController = TextEditingController(
+      text: status.workingDetails ?? '',
+    );
+    _appVersionController = TextEditingController(
+      text: status.appVersionCode?.toString() ?? '',
+    );
     _isEnableButton = status.isEnableButton;
     _isSomethingWrong = status.isSomethingWrong;
   }
@@ -52,15 +58,20 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
         "workingDetails": _detailsController.text.trim(),
         "isEnableButton": _isEnableButton,
         "isSomethingWrong": _isSomethingWrong,
+        "appVersionCode": int.tryParse(_appVersionController.text.trim()),
         "updatedAt": DateTime.now().millisecondsSinceEpoch,
       };
 
-      await _dbRef.update(updatedData).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw Exception('Connection timeout. Please check your internet connection.');
-        },
-      );
+      await _dbRef
+          .update(updatedData)
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw Exception(
+                'Connection timeout. Please check your internet connection.',
+              );
+            },
+          );
 
       if (!mounted) return;
 
@@ -94,7 +105,8 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
           e.toString().contains('connection')) {
         errorMessage += "Please check your internet connection and try again.";
       } else if (e.toString().contains('permission')) {
-        errorMessage += "You don't have permission to update this working status.";
+        errorMessage +=
+            "You don't have permission to update this working status.";
       } else {
         errorMessage += "Please try again later.";
       }
@@ -126,11 +138,17 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: const TextStyle(
-                fontSize: 14, fontWeight: FontWeight.w500, color: Colors.black)),
-        const SizedBox(height: 8),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 5),
         TextFormField(
+          style: TextStyle(fontSize: 12),
           controller: controller,
           validator: validator,
           keyboardType: keyboardType,
@@ -140,14 +158,16 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
             filled: true,
             fillColor: Colors.grey[50],
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(5),
               borderSide: BorderSide(color: Colors.grey[300]!),
             ),
             focusedBorder: const OutlineInputBorder(
-              borderSide: BorderSide(color: Colors.green, width: 2),
+              borderSide: BorderSide(color: Colors.green, width: 1),
             ),
-            contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 12,
+            ),
           ),
         ),
       ],
@@ -165,7 +185,7 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(5),
         border: Border.all(width: 1, color: Colors.black54),
       ),
       child: Row(
@@ -177,7 +197,7 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
                 Text(
                   label,
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: Colors.black87,
                   ),
@@ -187,10 +207,7 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                     ),
                   ),
               ],
@@ -213,29 +230,30 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
                   AnimatedPositioned(
                     duration: const Duration(milliseconds: 300),
                     curve: Curves.easeInOut,
-                    left: value ? 8 : null,
-                    right: value ? null : 8,
+                    left: value ? 10 : null,
+                    right: value ? null : 10,
                     top: 0,
                     bottom: 0,
                     child: Center(
                       child: Text(
                         value ? 'ON' : 'OFF',
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: 8,
                           fontWeight: FontWeight.bold,
                           color: value ? Colors.white : Colors.grey[600],
                         ),
                       ),
                     ),
                   ),
+
                   AnimatedPositioned(
                     duration: const Duration(milliseconds: 300),
                     curve: Curves.easeInOut,
-                    left: value ? 32 : 4,
-                    top: 4,
+                    left: value ? 35 : 8,
+                    top: 6,
                     child: Container(
-                      width: 24,
-                      height: 24,
+                      width: 18,
+                      height: 18,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: Colors.white,
@@ -248,7 +266,6 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
                         ],
                       ),
                     ),
-
                   ),
                 ],
               ),
@@ -267,15 +284,15 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SideMenu(
-            selectedIndex: 6, // Current screen index
-            onItemTapped: (index) {
-              // Navigate back to dashboard with selected index
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (context) => DashboardScreen(initialIndex: 0),
-                ),
-              );
-            },
+            // selectedIndex: 6, // Current screen index
+            // onItemTapped: (index) {
+            //   // Navigate back to dashboard with selected index
+            //   Navigator.of(context).pushReplacement(
+            //     MaterialPageRoute(
+            //       builder: (context) => DashboardScreen(initialIndex: 0),
+            //     ),
+            //   );
+            // },
           ),
 
           Expanded(
@@ -300,35 +317,41 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
                                   Row(
                                     children: [
                                       IconButton(
-                                        icon: const Icon(Icons.arrow_back,
-                                            color: Colors.black),
+                                        icon: const Icon(
+                                          Icons.arrow_back,
+                                          color: Colors.black,
+                                        ),
                                         onPressed: _isLoading
                                             ? null
                                             : () {
-                                          Navigator.pop(context);
-                                        },
+                                                Navigator.pop(context);
+                                              },
                                       ),
                                       Text(
-                                        "Edit Working Status",
+                                        'Edit Working Status',
                                         style: Theme.of(context)
                                             .textTheme
                                             .headlineLarge
                                             ?.copyWith(
-                                          color: Colors.black,
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                              color: Colors.black,
+                                              fontWeight: FontWeight.w900,
+                                            ),
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 5),
                                   Text(
-                                    "Dashboard / Working Status List / Edit Working Status",
+                                    'Dashboard / Working Status List / Edit Working Status',
                                     style: Theme.of(context)
                                         .textTheme
                                         .titleSmall
                                         ?.copyWith(
-                                      color: Colors.grey,
-                                    ),
+                                          color: Colors.grey,
+                                          fontSize: 10,
+                                          letterSpacing: 0.5,
+                                          fontWeight: FontWeight.normal,
+                                          fontFamily: 'Roboto',
+                                        ),
                                   ),
                                 ],
                               ),
@@ -338,139 +361,168 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded( flex: 3, child: Container(
-                                padding: const EdgeInsets.all(24),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(8),
-                                  color: Colors.white,
-                                ),
-                                child: Form(
-                                  key: _formKey,
-                                  child: Column(
-                                    children: [
-                                      _buildTextField(
-                                        label: "Working Title*",
-                                        controller: _titleController,
-                                        validator: (v) => v!.isEmpty
-                                            ? "Enter working title"
-                                            : null,
-                                      ),
-                                      const SizedBox(height: 20),
-                                      _buildTextField(
-                                        label: "Working Details*",
-                                        controller: _detailsController,
-                                        maxLines: 4,
-                                        validator: (v) => v!.isEmpty
-                                            ? "Enter working details"
-                                            : null,
-                                      ),
-                                      const SizedBox(height: 20),
-                                      Row(
-                                       children: [
-
-                                         Expanded(
-                                           child: _buildSwitchField(
-                                             label: "Enable Button",
-                                             subtitle:
-                                             "Enable or disable the button functionality",
-                                             value: _isEnableButton,
-                                             onChanged: (val) {
-                                               setState(() {
-                                                 _isEnableButton = val;
-                                               });
-                                             },
-                                           ),
-                                         ),
-                                         const SizedBox(width: 20),
-                                         Expanded(
-                                           child: _buildSwitchField(
-                                             label: "Something Wrong",
-                                             subtitle:
-                                             "Indicate if there's an issue or error",
-                                             value: _isSomethingWrong,
-                                             onChanged: (val) {
-                                               setState(() {
-                                                 _isSomethingWrong = val;
-                                               });
-                                             },
-                                           ),
-                                         ),
-
-                                       ],
-                                     ),
-                                      const SizedBox(height: 20),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: OutlinedButton(
-                                              onPressed: _isLoading
-                                                  ? null
-                                                  : () => Navigator.pop(context),
-                                              style: OutlinedButton.styleFrom(
-                                                padding: const EdgeInsets.symmetric(
-                                                    vertical: 16),
-                                                side: BorderSide(
-                                                    color: Colors.grey[400]!),
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                  BorderRadius.circular(8),
-                                                ),
+                              Expanded(
+                                flex: 3,
+                                child: Container(
+                                  padding: const EdgeInsets.all(24),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(8),
+                                    color: Colors.white,
+                                  ),
+                                  child: Form(
+                                    key: _formKey,
+                                    child: Column(
+                                      children: [
+                                        _buildTextField(
+                                          label: "Working Title*",
+                                          controller: _titleController,
+                                          validator: (v) => v!.isEmpty
+                                              ? "Enter working title"
+                                              : null,
+                                        ),
+                                        const SizedBox(height: 20),
+                                        _buildTextField(
+                                          label: "Working Details*",
+                                          controller: _detailsController,
+                                          maxLines: 4,
+                                          validator: (v) => v!.isEmpty
+                                              ? "Enter working details"
+                                              : null,
+                                        ),
+                                        const SizedBox(height: 20),
+                                        _buildTextField(
+                                          label: "App Version Code",
+                                          controller: _appVersionController,
+                                          keyboardType: TextInputType.number,
+                                        ),
+                                        const SizedBox(height: 20),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: _buildSwitchField(
+                                                label: "Enable Button",
+                                                subtitle:
+                                                    "Enable or disable the button functionality",
+                                                value: _isEnableButton,
+                                                onChanged: (val) {
+                                                  setState(() {
+                                                    _isEnableButton = val;
+                                                  });
+                                                },
                                               ),
-                                              child: const Text(
-                                                "CANCEL",
-                                                style: TextStyle(
-                                                  color: Colors.black54,
-                                                  fontWeight: FontWeight.w600,
+                                            ),
+                                            const SizedBox(width: 20),
+                                            Expanded(
+                                              child: _buildSwitchField(
+                                                label: "Something Wrong",
+                                                subtitle:
+                                                    "Indicate if there's an issue or error",
+                                                value: _isSomethingWrong,
+                                                onChanged: (val) {
+                                                  setState(() {
+                                                    _isSomethingWrong = val;
+                                                  });
+                                                },
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 20),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: SizedBox(
+                                                height: 40,
+                                                child: OutlinedButton(
+                                                  onPressed: _isLoading
+                                                      ? null
+                                                      : () => Navigator.pop(
+                                                          context,
+                                                        ),
+                                                  style: OutlinedButton.styleFrom(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          vertical: 8,
+                                                        ),
+                                                    side: BorderSide(
+                                                      color: Colors.grey[400]!,
+                                                    ),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            5,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  child: const Text(
+                                                    "CANCEL",
+                                                    style: TextStyle(
+                                                      color: Colors.black54,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: ElevatedButton(
-                                              onPressed: _isLoading
-                                                  ? null
-                                                  : _updateWorkingStatus,
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: Colors.green,
-                                                padding: const EdgeInsets.symmetric(
-                                                    vertical: 16),
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                  BorderRadius.circular(8),
-                                                ),
-                                              ),
-                                              child: _isLoading
-                                                  ? const SizedBox(
-                                                height: 20,
-                                                width: 20,
-                                                child:
-                                                CircularProgressIndicator(
-                                                  color: Colors.white,
-                                                  strokeWidth: 2,
-                                                ),
-                                              )
-                                                  : const Text(
-                                                "SAVE CHANGES",
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w600,
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: SizedBox(
+                                                height: 40,
+                                                child: ElevatedButton(
+                                                  onPressed: _isLoading
+                                                      ? null
+                                                      : _updateWorkingStatus,
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor:
+                                                        Colors.green,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          vertical: 8,
+                                                        ),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            5,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  child: _isLoading
+                                                      ? const SizedBox(
+                                                          height: 15,
+                                                          width: 15,
+                                                          child:
+                                                              CircularProgressIndicator(
+                                                                color: Colors
+                                                                    .white,
+                                                                strokeWidth: 2,
+                                                              ),
+                                                        )
+                                                      : const Text(
+                                                          "SAVE CHANGES",
+                                                          style: TextStyle(
+                                                            color: Colors.white,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
+                                          ],
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ),
                               ),
                               Expanded(
                                 flex: 1,
                                 child: Column(
                                   children: [
-                                    SizedBox(height: 10,),
+                                    SizedBox(height: 10),
                                     ClipRRect(
                                       borderRadius: BorderRadius.circular(12),
                                       child: _buildImagePreview(),
@@ -479,12 +531,11 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
                                   ],
                                 ),
                               ),
-
                             ],
-                          )
+                          ),
                         ],
                       ),
-                    )
+                    ),
                   ],
                 ),
               ),
@@ -494,18 +545,23 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
       ),
     );
   }
+
   Widget _buildImagePreview() {
-    // Placeholder when no image
     return Container(
       height: 200,
       width: 200,
-      color: Colors.grey[300],
-      child: Center(
-        child: Image.asset(
-          "images/profile.jpg",
-          width: 200,
-          height: 200,
-          fit: BoxFit.cover,
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: const Center(
+          child: Icon(
+            Icons.image_outlined, //  similar to your uploaded icon
+            size: 60,
+            color: Colors.grey,
+          ),
         ),
       ),
     );
@@ -515,6 +571,7 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
   void dispose() {
     _titleController.dispose();
     _detailsController.dispose();
+    _appVersionController.dispose();
     super.dispose();
   }
 }

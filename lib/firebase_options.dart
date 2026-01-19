@@ -44,14 +44,14 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyBYC5uuMut4DPcHi7ul0WjKuH_qyOjflls',
-    appId: '1:611277588462:web:638aaf7c5cc60e75a5b0ff',
-    messagingSenderId: '611277588462',
-    projectId: 'testing-79c4f',
-    authDomain: 'testing-79c4f.firebaseapp.com',
-    databaseURL: 'https://testing-79c4f-default-rtdb.firebaseio.com',
-    storageBucket: 'testing-79c4f.firebasestorage.app',
-    measurementId: 'G-G61E2YQJG0',
+    apiKey: 'AIzaSyBnIVr1Fe9HUxdRByEjaiaZWURyu3BC35U',
+    appId: '1:992806521648:web:a3d0842e5f838c5f3296f5',
+    messagingSenderId: '992806521648',
+    projectId: 'mahsolek-8417b',
+    authDomain: 'mahsolek-8417b.firebaseapp.com',
+    databaseURL: 'https://mahsolek-8417b-default-rtdb.firebaseio.com',
+    storageBucket: 'mahsolek-8417b.firebasestorage.app',
+    measurementId: 'G-BSD6VM8R6X',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
@@ -64,13 +64,15 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBwEFt79Yd01rCL_FfdJGf46uQjtKQ6JF4',
-    appId: '1:650859289991:ios:cf92082adacfc6d44f0722',
-    messagingSenderId: '650859289991',
-    projectId: 'login-system-86de6',
-    storageBucket: 'login-system-86de6.firebasestorage.app',
+    apiKey: 'AIzaSyBVZTLOaz1w0V-98xc9HHMctid8MsxXI_Q',
+    appId: '1:992806521648:ios:7e7d4fe7a9b608403296f5',
+    messagingSenderId: '992806521648',
+    projectId: 'mahsolek-8417b',
+    databaseURL: 'https://mahsolek-8417b-default-rtdb.firebaseio.com',
+    storageBucket: 'mahsolek-8417b.firebasestorage.app',
+    androidClientId: '992806521648-2p9185mjpcl68cmm6diffoju04c6dpah.apps.googleusercontent.com',
+    iosClientId: '992806521648-p3nd5s63sflm0l2i0rdiq27dr16r9ifg.apps.googleusercontent.com',
     iosBundleId: 'com.example.farmersAdmin',
-    databaseURL: 'https://login-system-86de6-default-rtdb.firebaseio.com', // 👈 ADD THIS
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

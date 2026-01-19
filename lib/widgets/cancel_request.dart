@@ -29,63 +29,69 @@ Future<void> showCancelRequestDialog({
                 child: SvgPicture.asset(
                   "images/delete.svg",
                   semanticsLabel: "Cancel icon",
-                  width: 60,
-                  height: 60,
+                  width: 50,
+                  height: 50,
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               Text(
                 title,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 18,
+                  fontSize: 14,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 5),
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 15),
+                style: const TextStyle(fontSize: 11),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 15),
               Wrap(
                 spacing: 12,
                 runSpacing: 12,
                 alignment: WrapAlignment.center,
                 children: [
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                  SizedBox(
+                    height: 30,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 0,
+                        ),
                       ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 12,
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: Text(
+                        confirmText,
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
                       ),
-                    ),
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: Text(
-                      confirmText,
-                      style: const TextStyle(color: Colors.white),
                     ),
                   ),
-                  OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.grey),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                  SizedBox(
+                    height: 30,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.grey),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 0,
+                        ),
                       ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 12,
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: Text(
+                        cancelText,
+                        style: const TextStyle(color: Colors.black87, fontSize: 12),
                       ),
-                    ),
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: Text(
-                      cancelText,
-                      style: const TextStyle(color: Colors.black87),
                     ),
                   ),
                 ],
