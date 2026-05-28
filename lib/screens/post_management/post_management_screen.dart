@@ -1,16 +1,16 @@
-import 'dart:async';
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/post_model.dart';
 import 'package:farmers_admin/screens/post_management/edit_post_screen.dart';
+import 'package:farmers_admin/services/admin_post_service.dart';
+import 'package:farmers_admin/services/permission_helper.dart';
 import 'package:farmers_admin/widgets/delete_dialog.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
-import 'package:farmers_admin/services/permission_helper.dart';
+import 'package:provider/provider.dart';
 
 class PostManagementScreen extends StatefulWidget {
   const PostManagementScreen({super.key});
@@ -39,9 +39,7 @@ class PostContent extends StatefulWidget {
 
 class _PostContentState extends State<PostContent> {
   late PlutoGridStateManager stateManager;
-  late DatabaseReference _dbRef;
   List<Post> _posts = [];
-  StreamSubscription<DatabaseEvent>? _postsSubscription;
   bool _isGridLoaded = false;
   bool _isLoading = true;
   final double rowHeight = 40;
@@ -307,8 +305,9 @@ class _PostContentState extends State<PostContent> {
                           ),
                         );
 
-                        // Show success snackbar if update was successful
+                        // Show success snackbar and refresh list if update was successful
                         if (result == 'success' && mounted) {
+                          _loadPosts();
                           try {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
@@ -374,10 +373,8 @@ class _PostContentState extends State<PostContent> {
                         title: "Delete Post",
                         message: "Are you sure you want to delete this post?",
                         onConfirm: () async {
-                          await FirebaseDatabase.instance
-                              .ref('productsPostData/$postId')
-                              .remove();
-                          setState(() {});
+                          await context.read<AdminPostService>().deletePost(postId as String);
+                          if (mounted) _loadPosts();
                         },
                       );
                     },
@@ -400,13 +397,12 @@ class _PostContentState extends State<PostContent> {
   @override
   void initState() {
     super.initState();
-    _dbRef = FirebaseDatabase.instance.ref().child('productsPostData');
     _selectedApproval = "Approved";
     _selectedCategory = "All"; // Initialize category
     _tempSelectedApproval = "Approved";
     _tempSelectedCategory = "All"; // Initialize temporary category
     _loadPermissions();
-    _listenForPosts();
+    _loadPosts();
   }
 
   Future<void> _loadPermissions() async {
@@ -420,39 +416,38 @@ class _PostContentState extends State<PostContent> {
     }
   }
 
-  void _listenForPosts() {
-    _postsSubscription = _dbRef.onValue.listen((DatabaseEvent event) {
+  Future<void> _loadPosts() async {
+    if (!mounted) return;
+    // Null-safety: default to "Approved" if _selectedApproval is somehow null
+    _selectedApproval ??= "Approved";
+    final service = context.read<AdminPostService>();
+    try {
+      // Fetch based on selected approval filter
+      int? approvedFilter;
+      if (_selectedApproval == "Approved") {
+        approvedFilter = 1;
+      } else if (_selectedApproval == "Pending") {
+        approvedFilter = 0;
+      }
+      // If "All", approvedFilter stays null to fetch all posts
+      final rows = await service.getPosts(limit: 500, approved: approvedFilter, bypassCache: true);
       if (!mounted) return;
-
-      if (_isLoading) {
+      setState(() {
+        _posts = service.postsFromRows(rows);
+        _isLoading = false;
+      });
+      if (_isGridLoaded) _updatePlutoGridRows();
+    } catch (e) {
+      if (mounted) {
         setState(() => _isLoading = false);
       }
-
-      if (event.snapshot.value != null) {
-        final rawData = event.snapshot.value as Map<dynamic, dynamic>;
-        final List<Post> loadedPosts = [];
-        rawData.forEach((key, value) {
-          if (value is Map) {
-            final postMap = Map<dynamic, dynamic>.from(value);
-            loadedPosts.add(Post.fromMap(key, postMap));
-          }
-        });
-
-        // Sort posts by date before setting state
-        loadedPosts.sort((a, b) => b.postDate.compareTo(a.postDate));
-
-        setState(() {
-          _posts = loadedPosts;
-        });
-        if (_isGridLoaded) _updatePlutoGridRows();
-      } else {
-        setState(() => _posts = []);
-        if (_isGridLoaded) _updatePlutoGridRows();
-      }
-    });
+    }
   }
 
   bool _matchesFilters(Post post) {
+    // Exclude sold posts - they have their own dedicated screen
+    if (post.postIsSold == true) return false;
+
     // Search query filter
     if (_searchQuery.isNotEmpty) {
       final query = _searchQuery.toLowerCase();
@@ -536,7 +531,6 @@ class _PostContentState extends State<PostContent> {
 
   @override
   void dispose() {
-    _postsSubscription?.cancel();
     super.dispose();
   }
 
@@ -800,6 +794,53 @@ class _PostContentState extends State<PostContent> {
                                 ),
                               ),
                               const SizedBox(height: 12),
+                              // Approval Status Dropdown - Mobile
+                              DropdownButtonFormField2<String>(
+                                value: _tempSelectedApproval ?? "Approved",
+                                isExpanded: true,
+                                decoration: InputDecoration(
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                  focusedBorder: const OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Colors.green,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                ),
+                                hint: const Text(
+                                  "Select Approval Status",
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                items: ['All', 'Approved', 'Pending'].map((status) {
+                                  return DropdownMenuItem(
+                                    value: status,
+                                    child: Text(status),
+                                  );
+                                }).toList(),
+                                onChanged: (val) {
+                                  setState(() {
+                                    _tempSelectedApproval = val;
+                                  });
+                                },
+                                dropdownStyleData: const DropdownStyleData(
+                                  maxHeight: 200,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.all(
+                                      Radius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
                               SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton(
@@ -808,8 +849,10 @@ class _PostContentState extends State<PostContent> {
                                       _searchQuery = _tempSearchQuery
                                           .toLowerCase();
                                       _selectedCategory = _tempSelectedCategory;
+                                      _selectedApproval = _tempSelectedApproval ?? "Approved";
                                       _currentPage = 1;
-                                      if (_isGridLoaded) _updatePlutoGridRows();
+                                      // Reload posts when approval filter changes
+                                      _loadPosts();
                                     });
                                   },
                                   style: ElevatedButton.styleFrom(
@@ -959,6 +1002,69 @@ class _PostContentState extends State<PostContent> {
                                 ),
                               ),
                               const SizedBox(width: 12),
+                              // Approval Status Dropdown - Desktop
+                              Expanded(
+                                flex: 1,
+                                child: SizedBox(
+                                  height: 38,
+                                  child: DropdownButtonFormField2<String>(
+                                    value: _tempSelectedApproval ?? "Approved",
+                                    isExpanded: true,
+                                    decoration: InputDecoration(
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      focusedBorder: const OutlineInputBorder(
+                                        borderSide: BorderSide(
+                                          color: Colors.green,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 15,
+                                            vertical: 10,
+                                          ),
+                                    ),
+                                    iconStyleData: const IconStyleData(
+                                      icon: Icon(Icons.arrow_drop_down),
+                                      iconSize: 20,
+                                      iconEnabledColor: Colors.grey,
+                                      iconDisabledColor: Colors.grey,
+                                    ),
+                                    hint: const Text(
+                                      "Approval Status",
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                    items: ['All', 'Approved', 'Pending'].map((status) {
+                                      return DropdownMenuItem(
+                                        value: status,
+                                        child: Text(
+                                          status,
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: (val) {
+                                      setState(() {
+                                        _tempSelectedApproval = val;
+                                      });
+                                    },
+                                    dropdownStyleData: const DropdownStyleData(
+                                      maxHeight: 200,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.all(
+                                          Radius.circular(8),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
                               Expanded(
                                 flex: 1,
                                 child: ElevatedButton(
@@ -967,8 +1073,10 @@ class _PostContentState extends State<PostContent> {
                                       _searchQuery = _tempSearchQuery
                                           .toLowerCase();
                                       _selectedCategory = _tempSelectedCategory;
+                                      _selectedApproval = _tempSelectedApproval ?? "Approved";
                                       _currentPage = 1;
-                                      if (_isGridLoaded) _updatePlutoGridRows();
+                                      // Reload posts when approval filter changes
+                                      _loadPosts();
                                     });
                                   },
                                   style: ElevatedButton.styleFrom(

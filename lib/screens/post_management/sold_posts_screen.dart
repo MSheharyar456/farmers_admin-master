@@ -1,16 +1,16 @@
-import 'dart:async';
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/post_model.dart';
 import 'package:farmers_admin/screens/post_management/edit_post_screen.dart';
+import 'package:farmers_admin/services/admin_post_service.dart';
+import 'package:farmers_admin/services/permission_helper.dart';
 import 'package:farmers_admin/widgets/delete_dialog.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
-import 'package:farmers_admin/services/permission_helper.dart';
+import 'package:provider/provider.dart';
 
 class SoldPostsScreen extends StatefulWidget {
   const SoldPostsScreen({super.key});
@@ -39,9 +39,7 @@ class SoldPostsContent extends StatefulWidget {
 
 class _SoldPostsContentState extends State<SoldPostsContent> {
   late PlutoGridStateManager stateManager;
-  late DatabaseReference _dbRef;
   List<Post> _posts = [];
-  StreamSubscription<DatabaseEvent>? _postsSubscription;
   bool _isGridLoaded = false;
   bool _isLoading = true;
   final double rowHeight = 40;
@@ -139,9 +137,8 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
   };
 
   List<Post> get _filteredPosts {
-    // First filter only sold posts that are approved, then apply other filters
-    final soldPosts = _posts.where((post) => post.postIsSold == true).toList();
-    final filtered = soldPosts.where(_matchesFilters).toList();
+    // Backend already returns only sold posts, just apply other filters
+    final filtered = _posts.where(_matchesFilters).toList();
     // Then sort by postDate in descending order (newest first)
     filtered.sort((a, b) => b.postDate.compareTo(a.postDate));
     return filtered;
@@ -348,10 +345,8 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
                         title: "Delete Post",
                         message: "Are you sure you want to delete this post?",
                         onConfirm: () async {
-                          await FirebaseDatabase.instance
-                              .ref('productsPostData/$postId')
-                              .remove();
-                          setState(() {});
+                          await context.read<AdminPostService>().deletePost(postId as String);
+                          if (mounted) _loadPosts();
                         },
                       );
                     },
@@ -372,11 +367,10 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
   @override
   void initState() {
     super.initState();
-    _dbRef = FirebaseDatabase.instance.ref().child('productsPostData');
-    _selectedCategory = "All"; // Initialize category
-    _tempSelectedCategory = "All"; // Initialize temporary category
+    _selectedCategory = "All";
+    _tempSelectedCategory = "All";
     _loadPermissions();
-    _listenForPosts();
+    _loadPosts();
   }
 
   Future<void> _loadPermissions() async {
@@ -390,36 +384,21 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
     }
   }
 
-  void _listenForPosts() {
-    _postsSubscription = _dbRef.onValue.listen((DatabaseEvent event) {
+  Future<void> _loadPosts() async {
+    if (!mounted) return;
+    final service = context.read<AdminPostService>();
+    try {
+      // Fetch ONLY approved posts that are sold (both postIsSold = 1 and postIsSold = 2)
+      final rows = await service.getPosts(limit: 500, approved: 1, sold: 1, bypassCache: true);
       if (!mounted) return;
-
-      if (_isLoading) {
-        setState(() => _isLoading = false);
-      }
-
-      if (event.snapshot.value != null) {
-        final rawData = event.snapshot.value as Map<dynamic, dynamic>;
-        final List<Post> loadedPosts = [];
-        rawData.forEach((key, value) {
-          if (value is Map) {
-            final postMap = Map<dynamic, dynamic>.from(value);
-            loadedPosts.add(Post.fromMap(key, postMap));
-          }
-        });
-
-        // Sort posts by date before setting state
-        loadedPosts.sort((a, b) => b.postDate.compareTo(a.postDate));
-
-        setState(() {
-          _posts = loadedPosts;
-        });
-        if (_isGridLoaded) _updatePlutoGridRows();
-      } else {
-        setState(() => _posts = []);
-        if (_isGridLoaded) _updatePlutoGridRows();
-      }
-    });
+      setState(() {
+        _posts = service.postsFromRows(rows);
+        _isLoading = false;
+      });
+      if (_isGridLoaded) _updatePlutoGridRows();
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   bool _matchesFilters(Post post) {
@@ -497,8 +476,8 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
   }
 
   @override
+  @override
   void dispose() {
-    _postsSubscription?.cancel();
     super.dispose();
   }
 

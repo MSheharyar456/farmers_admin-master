@@ -106,6 +106,18 @@ class UserScreenViewModel extends ChangeNotifier {
     _applyFilters();
   }
 
+  /// Fetch users from backend and load into view model.
+  Future<void> loadFromRepository() async {
+    try {
+      _errorMessage = null;
+      final users = await repository.getUsers(limit: 500);
+      loadUsers(users);
+    } catch (e) {
+      _errorMessage = 'Failed to load users: ${e.toString()}';
+      notifyListeners();
+    }
+  }
+
   bool _matchesFilters(UserModel user) {
     // 🔍 Search filter
     if (_searchQuery.isNotEmpty) {
@@ -170,6 +182,53 @@ class UserScreenViewModel extends ChangeNotifier {
       _applyFilters();
     } catch (e) {
       _errorMessage = 'Failed to delete user: ${e.toString()}';
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> bulkDeleteUsers(List<String> userIds) async {
+    try {
+      _errorMessage = null;
+      final result = await repository.bulkDeleteUsers(userIds);
+      
+      // Remove deleted users from local list
+      _allUsers.removeWhere((user) => userIds.contains(user.uid));
+      _applyFilters();
+      
+      return result;
+    } catch (e) {
+      _errorMessage = 'Failed to bulk delete users: ${e.toString()}';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> getDeletionStatus() async {
+    try {
+      return await repository.getDeletionStatus();
+    } catch (e) {
+      _errorMessage = 'Failed to get deletion status: ${e.toString()}';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> pauseDeletionQueue() async {
+    try {
+      _errorMessage = null;
+      await repository.pauseDeletionQueue();
+    } catch (e) {
+      _errorMessage = 'Failed to pause deletion queue: ${e.toString()}';
+      notifyListeners();
+    }
+  }
+
+  Future<void> resumeDeletionQueue() async {
+    try {
+      _errorMessage = null;
+      await repository.resumeDeletionQueue();
+    } catch (e) {
+      _errorMessage = 'Failed to resume deletion queue: ${e.toString()}';
       notifyListeners();
     }
   }

@@ -28,6 +28,7 @@ class Post {
   final bool postIsLiked;
   final bool postIsColored;
   final bool postIsSold;
+  final int postIsSoldStatus;
   final bool postIsTop;
   final bool postIsUpdate;
   final bool postCancelApproved;
@@ -45,6 +46,7 @@ class Post {
   final int? postIsTopExpiry;
   final int? postIsHomePostExpiry;
   final int? postIsPutTopExpiry;
+  final int? postIsSoldExpiry;
 
   // Category-specific fields
   final String? postAdditionalDetails;
@@ -64,6 +66,7 @@ class Post {
   final String postUserName;
   final int postViews;
   final String postUserImageColor;
+  final String? postCurrencyCategory;
 
   const Post({
     required this.postId,
@@ -88,6 +91,7 @@ class Post {
     this.postIsLiked = false,
     this.postIsColored = true,
     this.postIsSold = false,
+    this.postIsSoldStatus = 0,
     this.postIsTop = false,
     this.postIsUpdate = false,
     this.postCancelApproved = false,
@@ -120,7 +124,9 @@ class Post {
     this.postIsTopExpiry,
     this.postIsHomePostExpiry,
     this.postIsPutTopExpiry,
+    this.postIsSoldExpiry,
     this.postUserImageColor = '#cccccc',
+    this.postCurrencyCategory,
   });
 
   /// Display weight intelligently
@@ -139,6 +145,26 @@ class Post {
       return '$postQuantity items';
     }
     return 'N/A';
+  }
+
+  /// Build from server API row (postId in row; optional baseUrl to resolve image paths).
+  factory Post.fromServerRow(Map<String, dynamic> row, {String? baseUrl}) {
+    final id = row['postId']?.toString() ?? '';
+    Map<String, dynamic> map = Map<String, dynamic>.from(row);
+    if (baseUrl != null && baseUrl.isNotEmpty) {
+      final images = _parseImagesList(row['postImages']);
+      final base = baseUrl.endsWith('/') ? baseUrl : '$baseUrl';
+      map['postImages'] = images
+          .map(
+            (p) => p.isEmpty
+                ? p
+                : (p.startsWith('http')
+                      ? p
+                      : '$base${p.startsWith('/') ? p : '/$p'}'),
+          )
+          .toList();
+    }
+    return Post.fromMap(id, map);
   }
 
   /// Factory to build from Firebase map
@@ -163,16 +189,22 @@ class Post {
       postWeight: _parseToDouble(map['postWeight']) ?? 0.0,
       postDate:
           _parseToInt(map['postDate']) ?? DateTime.now().millisecondsSinceEpoch,
-      postIsApproved: map['postIsApproved'] == true,
-      postIsFeatured: map['postIsFeatured'] == true,
-      postIsHomePost: map['postIsHomePost'] == true,
-      postIsLiked: map['postIsLiked'] == true,
-      postIsColored: map['postIsColored'] == true,
-      postIsSold: map['postIsSold'] == true,
-      postIsTop: map['postIsTop'] == true,
-      postIsUpdate: map['postIsUpdate'] == true,
-      postCancelApproved: map['postCancelApproved'] == true,
-      postIsCancelled: map['postIsCancelled'] == true,
+      postIsApproved: _parseToBool(map['postIsApproved']) ?? false,
+      postIsFeatured: _parseToBool(map['postIsFeatured']) ?? false,
+      postIsHomePost: _parseToBool(map['postIsHomePost']) ?? false,
+      postIsLiked: _parseToBool(map['postIsLiked']) ?? false,
+      postIsColored: _parseToBool(map['postIsColored']) ?? false,
+      postIsSold:
+          (_parseToInt(map['postIsSold']) ??
+              (_parseToBool(map['postIsSold']) == true ? 1 : 0)) !=
+          0,
+      postIsSoldStatus:
+          _parseToInt(map['postIsSold']) ??
+          (_parseToBool(map['postIsSold']) == true ? 1 : 0),
+      postIsTop: _parseToBool(map['postIsTop']) ?? false,
+      postIsUpdate: _parseToBool(map['postIsUpdate']) ?? false,
+      postCancelApproved: _parseToBool(map['postCancelApproved']) ?? false,
+      postIsCancelled: _parseToBool(map['postIsCancelled']) ?? false,
       postImages: _parseImagesList(map['postImages']),
       postAdditionalDetails: map['postAdditionalDetails']?.toString(),
       postArea: _parseToDouble(map['postArea']) ?? 0.0,
@@ -204,7 +236,9 @@ class Post {
       postIsTopExpiry: _parseToInt(map['postIsTopExpiry']),
       postIsHomePostExpiry: _parseToInt(map['postIsHomePostExpiry']),
       postIsPutTopExpiry: _parseToInt(map['postIsPutTopExpiry']),
+      postIsSoldExpiry: _parseToInt(map['postIsSoldExpiry']),
       postUserImageColor: map['postUserImageColor']?.toString() ?? '#ffcccccc',
+      postCurrencyCategory: map['postCurrencyCategory']?.toString(),
     );
   }
 
@@ -264,7 +298,9 @@ class Post {
       'postIsTopExpiry': postIsTopExpiry,
       'postIsHomePostExpiry': postIsHomePostExpiry,
       'postIsPutTopExpiry': postIsPutTopExpiry,
+      'postIsSoldExpiry': postIsSoldExpiry,
       'postUserImageColor': postUserImageColor,
+      'postCurrencyCategory': postCurrencyCategory,
     };
   }
 
@@ -305,9 +341,9 @@ class Post {
     if (value is bool) return value;
     if (value is String) {
       final lower = value.toLowerCase().trim();
-      return lower == 'true' || lower == '1';
+      return lower == 'true' || lower == '1' || lower == '2';
     }
-    if (value is int) return value == 1;
+    if (value is int) return value != 0;
     return null;
   }
 }

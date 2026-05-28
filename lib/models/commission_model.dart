@@ -43,6 +43,61 @@ class CommissionModel {
     );
   }
 
+  /// Parse from backend API response format (GET /admin/commissions)
+  factory CommissionModel.fromApiJson(Map<String, dynamic> json) {
+    // API returns: id, userId, name, phone, bank, commissionAmount, currency,
+    // postCode, notes, receiptUrl, status, adminNotes, requestDate, createdAt
+    final id = json['id']?.toString() ?? '';
+
+    // Parse requestDate - can be string or int timestamp
+    final requestDateValue = json['requestDate'];
+    int requestData = 0;
+    if (requestDateValue is int) {
+      requestData = requestDateValue;
+    } else if (requestDateValue is String) {
+      // Try parsing as ISO date string
+      try {
+        final parsed = DateTime.parse(requestDateValue);
+        requestData = parsed.millisecondsSinceEpoch;
+      } catch (_) {
+        requestData = 0;
+      }
+    }
+
+    // Parse createdAt as fallback
+    if (requestData == 0) {
+      final createdAt = json['createdAt'];
+      if (createdAt is int) {
+        requestData = createdAt;
+      } else if (createdAt is String) {
+        try {
+          final parsed = DateTime.parse(createdAt);
+          requestData = parsed.millisecondsSinceEpoch;
+        } catch (_) {
+          requestData = DateTime.now().millisecondsSinceEpoch;
+        }
+      } else {
+        requestData = DateTime.now().millisecondsSinceEpoch;
+      }
+    }
+
+    final date = DateTime.fromMillisecondsSinceEpoch(requestData);
+    final formattedDate = "${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}";
+
+    return CommissionModel(
+      itemId: id,
+      name: json['name']?.toString() ?? '',
+      phone: json['phone']?.toString() ?? '',
+      bank: json['bank']?.toString() ?? '',
+      commissionAmount: json['commissionAmount']?.toString() ?? '',
+      postCode: json['postCode']?.toString() ?? '',
+      notes: json['notes']?.toString() ?? '',
+      receiptUrl: json['receiptUrl']?.toString() ?? '',
+      requestData: requestData,
+      formattedDate: formattedDate,
+    );
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'itemId': itemId,

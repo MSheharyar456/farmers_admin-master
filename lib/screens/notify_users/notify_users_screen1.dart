@@ -4,12 +4,14 @@ import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/user_notification_model.dart';
 import 'package:farmers_admin/screens/notify_users/add_notify_user.dart';
 import 'package:farmers_admin/screens/notify_users/edit_notify_user.dart';
+import 'package:farmers_admin/services/admin_notification_service.dart';
+import 'package:farmers_admin/services/admin_server_auth_service.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
 import 'package:pluto_grid/pluto_grid.dart';
+import 'package:provider/provider.dart';
 
 class NotifyUsersScreen extends StatefulWidget {
   const NotifyUsersScreen({super.key});
@@ -38,9 +40,7 @@ class NotifyUsersContent extends StatefulWidget {
 
 class _NotifyUsersContentState extends State<NotifyUsersContent> {
   late PlutoGridStateManager stateManager;
-  late DatabaseReference _dbRef;
   List<UserNotification> _notifications = [];
-  StreamSubscription<DatabaseEvent>? _notificationsSubscription;
   bool _isGridLoaded = false;
   bool _isLoading = true;
   final double rowHeight = 40;
@@ -377,47 +377,41 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
   void initState() {
     super.initState();
     _searchController = TextEditingController();
-    _dbRef = FirebaseDatabase.instance.ref().child('userNotifications');
-    _listenForNotifications();
+    _loadNotifications();
   }
 
-  void _listenForNotifications() {
-    _notificationsSubscription = _dbRef.onValue.listen((DatabaseEvent event) {
-      if (!mounted) return;
+  Future<void> _loadNotifications() async {
+    final authService = Provider.of<AdminServerAuthService>(context, listen: false);
+    final result = await AdminNotificationService.getNotifications(
+      authToken: authService.authToken,
+      limit: 100,
+    );
 
-      if (_isLoading) {
-        setState(() => _isLoading = false);
-      }
+    if (!mounted) return;
 
-      if (event.snapshot.value != null) {
-        final rawData = event.snapshot.value;
-        final List<UserNotification> loadedNotifications = [];
-
-        if (rawData is Map<dynamic, dynamic>) {
-          rawData.forEach((key, value) {
-            if (value is Map) {
-              final notificationMap = Map<dynamic, dynamic>.from(value);
-              loadedNotifications.add(
-                UserNotification.fromMap(key.toString(), notificationMap)
-              );
-            }
-          });
-
-          // Sort by date, newest first
-          loadedNotifications.sort((a, b) {
-            return b.notificationDate.compareTo(a.notificationDate);
-          });
-        }
-
-        setState(() {
-          _notifications = loadedNotifications;
-        });
-        if (_isGridLoaded) _updatePlutoGridRows();
+    setState(() {
+      _isLoading = false;
+      if (result['success'] == true) {
+        final List<dynamic> notificationsData = result['notifications'] ?? [];
+        _notifications = notificationsData.map((data) {
+          return UserNotification(
+            notificationId: data['notificationId']?.toString() ?? '',
+            notificationTitle: data['notificationTitle']?.toString() ?? '',
+            notificationMessage: data['notificationMessage']?.toString() ?? '',
+            userId: data['userId']?.toString() ?? '',
+            notificationDate: data['notificationDate'] is int
+                ? data['notificationDate']
+                : int.tryParse(data['notificationDate']?.toString() ?? '0') ?? 0,
+          );
+        }).toList();
+        // Sort by date, newest first
+        _notifications.sort((a, b) => b.notificationDate.compareTo(a.notificationDate));
       } else {
-        setState(() => _notifications = []);
-        if (_isGridLoaded) _updatePlutoGridRows();
+        _notifications = [];
       }
     });
+
+    if (_isGridLoaded) _updatePlutoGridRows();
   }
 
   bool _matchesFilters(UserNotification notification) {
@@ -474,7 +468,6 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
 
   @override
   void dispose() {
-    _notificationsSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
   }

@@ -1,66 +1,50 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
-import 'package:crypto/crypto.dart';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../config/api_config.dart';
 
-
-/// Service to handle all authentication operations
+/// Service to handle all authentication operations via Node.js API
 class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
-
-  // Get current user
-  User? get currentUser => _auth.currentUser;
-
-  // Check if user is logged in
-  bool get isLoggedIn => _auth.currentUser != null;
-
-  /// Hash the passkey using SHA-256
-  String _hashPasskey(String passkey) {
-    final bytes = utf8.encode(passkey);
-    final hash = sha256.convert(bytes);
-    return hash.toString();
+  // Check if user is logged in by checking for existence of JWT token
+  Future<bool> get isLoggedIn async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('auth_token') != null;
   }
 
-  /// Sign up new admin user
+  /// Sign up new admin user (sub-admin)
   Future<AuthResult> signUp({
     required String email,
     required String password,
+    required String username,
     required String passkey,
   }) async {
     try {
-      // Create user account
-      final userCredential = await _auth.createUserWithEmailAndPassword(
-        email: email.trim(),
-        password: password.trim(),
+      final response = await http.post(
+        Uri.parse('$apiBaseUrl/admin/auth/signup'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email.trim(),
+          'password': password.trim(),
+          'username': username.trim(),
+          'passkey': passkey.trim(),
+        }),
       );
 
-      // Hash the passkey before storing
-      final hashedPasskey = _hashPasskey(passkey.trim());
+      final data = jsonDecode(response.body);
 
-      // Store hashed passkey in database
-      await _dbRef
-          .child("adminPasskey")
-          .child(userCredential.user!.uid)
-          .set({
-        "email": email.trim(),
-        "passkeyHash": hashedPasskey,
-        "createdAt": DateTime.now().toIso8601String(),
-      });
-
-      // Sign out immediately after signup
-      await _auth.signOut();
-
-      return AuthResult.success(
-        message: 'Account created successfully! Please log in.',
-      );
-    } on FirebaseAuthException catch (e) {
-      return AuthResult.failure(
-        message: _getAuthErrorMessage(e.code),
-      );
+      if (response.statusCode == 200 && data['success'] == true) {
+        return AuthResult.success(
+          message: data['message'] ?? 'Account created successfully! Please log in.',
+        );
+      } else {
+        return AuthResult.failure(
+          message: data['message'] ?? 'Signup failed.',
+        );
+      }
     } catch (e) {
+      print('DEBUG: AuthService.signUp error: $e');
       return AuthResult.failure(
-        message: 'An unexpected error occurred. Please try again.',
+        message: 'Network error. Please check your connection.',
       );
     }
   }
@@ -70,88 +54,65 @@ class AuthService {
     required String email,
     required String password,
     required String passkey,
+    String? optionkey,
   }) async {
     try {
-      // Sign in with email and password
-      final userCredential = await _auth.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password.trim(),
+      final response = await http.post(
+        Uri.parse('$apiBaseUrl/admin/auth/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email.trim(),
+          'password': password.trim(),
+          'passkey': passkey.trim(),
+          'optionkey': optionkey?.trim() ?? '',
+        }),
       );
 
-      // Verify passkey
-      final isPasskeyValid = await _verifyPasskey(
-        uid: userCredential.user!.uid,
-        passkey: passkey.trim(),
-      );
+      final data = jsonDecode(response.body);
 
-      if (!isPasskeyValid) {
-        await _auth.signOut();
+      if (response.statusCode == 200 && data['success'] == true) {
+        // Save token and user info
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('auth_token', data['token']);
+        await prefs.setString('user_id', data['user']['id']);
+        await prefs.setString('user_email', data['user']['email']);
+        await prefs.setString('user_name', data['user']['username']);
+        await prefs.setString('user_role', data['user']['role']);
+        await prefs.setString('userType', data['user']['userType']);
+
+        return AuthResult.success(
+          message: 'Login successful!',
+          userType: data['user']['userType'],
+        );
+      } else {
         return AuthResult.failure(
-          message: 'Invalid passkey. Please try again.',
+          message: data['message'] ?? 'Invalid credentials.',
         );
       }
-
-      return AuthResult.success(
-        message: 'Login successful!',
-      );
-    } on FirebaseAuthException catch (e) {
-      return AuthResult.failure(
-        message: _getAuthErrorMessage(e.code),
-      );
     } catch (e) {
+      print('DEBUG: AuthService.login error: $e');
       return AuthResult.failure(
-        message: 'An unexpected error occurred. Please try again.',
+        message: 'Network error. Please check your connection.',
       );
-    }
-  }
-
-  /// Verify passkey by comparing hashes
-  Future<bool> _verifyPasskey({
-    required String uid,
-    required String passkey,
-  }) async {
-    try {
-      final snapshot = await _dbRef.child("adminPasskey").child(uid).get();
-
-      if (!snapshot.exists) {
-        return false;
-      }
-
-      final storedHash = snapshot.child("passkeyHash").value as String?;
-      if (storedHash == null) {
-        return false;
-      }
-
-      final inputHash = _hashPasskey(passkey);
-      return storedHash == inputHash;
-    } catch (e) {
-      return false;
     }
   }
 
   /// Sign out user
   Future<void> signOut() async {
-    await _auth.signOut();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+    await prefs.remove('user_id');
+    await prefs.remove('user_email');
+    await prefs.remove('user_name');
+    await prefs.remove('user_role');
+    await prefs.remove('userType');
+    await prefs.remove('activeMenuIndex');
   }
 
-  /// Get user-friendly error messages
-  String _getAuthErrorMessage(String code) {
-    switch (code) {
-      case 'user-not-found':
-        return 'No account found for this email.';
-      case 'wrong-password':
-        return 'Incorrect password. Please try again.';
-      case 'invalid-email':
-        return 'Please enter a valid email address.';
-      case 'email-already-in-use':
-        return 'This email is already registered.';
-      case 'weak-password':
-        return 'Password is too weak. Please use a stronger password.';
-      case 'network-request-failed':
-        return 'Network error. Please check your connection.';
-      default:
-        return 'Authentication failed. Please try again.';
-    }
+  /// Get the stored auth token for API calls
+  Future<String?> getAuthToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('auth_token');
   }
 }
 
@@ -159,11 +120,12 @@ class AuthService {
 class AuthResult {
   final bool isSuccess;
   final String message;
+  final String? userType;
 
-  AuthResult._({required this.isSuccess, required this.message});
+  AuthResult._({required this.isSuccess, required this.message, this.userType});
 
-  factory AuthResult.success({required String message}) {
-    return AuthResult._(isSuccess: true, message: message);
+  factory AuthResult.success({required String message, String? userType}) {
+    return AuthResult._(isSuccess: true, message: message, userType: userType);
   }
 
   factory AuthResult.failure({required String message}) {

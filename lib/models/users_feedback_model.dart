@@ -7,6 +7,9 @@ class FeedbackModel {
   final String type;
   final int timestamp;
   final String formattedDate;
+  final String? userMail;
+  final String? userContact;
+  final int? rating;
 
   FeedbackModel({
     required this.id,
@@ -16,21 +19,31 @@ class FeedbackModel {
     required this.type,
     required this.timestamp,
     required this.formattedDate,
+    this.userMail,
+    this.userContact,
+    this.rating,
   });
 
   factory FeedbackModel.fromMap(String id, Map<String, dynamic> map) {
-    final timestamp = map['timestamp'] as int? ?? 0;
+    final timestamp = map['timestamp'] is int
+        ? map['timestamp'] as int
+        : (map['timestamp'] is num
+            ? (map['timestamp'] as num).toInt()
+            : 0);
     final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
     final formattedDate = "${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}";
 
     return FeedbackModel(
       id: id,
-      userId: map['userId'] ?? '',
-      userName: map['userName'] ?? 'Unknown User',
-      message: map['message'] ?? '',
-      type: map['type'] ?? 'General',
+      userId: map['userId']?.toString() ?? '',
+      userName: map['userName']?.toString() ?? 'Unknown User',
+      message: map['message']?.toString() ?? '',
+      type: map['type']?.toString() ?? 'General',
       timestamp: timestamp,
       formattedDate: formattedDate,
+      userMail: map['userMail']?.toString(),
+      userContact: map['userContact']?.toString(),
+      rating: map['rating'] is int ? map['rating'] : null,
     );
   }
 
@@ -43,6 +56,9 @@ class FeedbackModel {
       'type': type,
       'timestamp': timestamp,
       'formattedDate': formattedDate,
+      'userMail': userMail,
+      'userContact': userContact,
+      'rating': rating,
     };
   }
 }

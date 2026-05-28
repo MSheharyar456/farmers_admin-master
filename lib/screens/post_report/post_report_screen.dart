@@ -1,9 +1,11 @@
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/post_report_model.dart';
+import 'package:farmers_admin/services/admin_report_posts_api_service.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
-import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 
@@ -34,15 +36,50 @@ class PostReportContent extends StatefulWidget {
 
 class _PostReportContentState extends State<PostReportContent> {
   late PlutoGridStateManager stateManager;
-  String _searchQuery = ''; // Temporary input value
-  String _appliedSearchQuery = ''; // Applied filter value
+  List<PostReportModel> _reports = [];
+  bool _loading = true;
+  String _searchQuery = '';
+  String _appliedSearchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   int _currentPage = 1;
   int _rowsPerPage = 10;
   final double rowHeight = 40;
   final double headerHeight = 50;
   bool _isGridLoaded = false;
-  bool _isInitialLoad = true;
+
+  Future<void> _loadReports() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+    try {
+      final service = context.read<AdminReportPostsApiService>();
+      final list = await service.getReportPosts(limit: 200);
+      debugPrint('[POST_REPORT] Loaded ${list.length} reports');
+      if (list.isNotEmpty) {
+        debugPrint('[POST_REPORT] First report: ${list.first}');
+      }
+      final reports = list.map((e) {
+        final id = e['id']?.toString() ?? '';
+        return PostReportModel.fromMap(id, e);
+      }).toList();
+      reports.sort((a, b) => b.postReportDate.compareTo(a.postReportDate));
+      if (mounted) setState(() {
+        _reports = reports;
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint('[POST_REPORT] Error loading reports: $e');
+      if (mounted) setState(() {
+        _reports = [];
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReports();
+  }
 
   @override
   void dispose() {
@@ -82,11 +119,19 @@ class _PostReportContentState extends State<PostReportContent> {
           width: 130,
           enableEditingMode: false,
         ),
+      if (!isMobile)
+        PlutoColumn(
+          title: 'Reporter ID',
+          field: 'reporterId',
+          type: PlutoColumnType.text(),
+          width: 150,
+          enableEditingMode: false,
+        ),
       PlutoColumn(
-        title: 'Post Code',
-        field: 'postCode',
+        title: 'Post ID',
+        field: 'postId',
         type: PlutoColumnType.text(),
-        width: isMobile ? 100 : 120,
+        width: isMobile ? 100 : 150,
         enableEditingMode: false,
       ),
       if (!isMobile)
@@ -108,9 +153,11 @@ class _PostReportContentState extends State<PostReportContent> {
         enableSorting: false,
         renderer: (ctx) {
           final reportData = ctx.row.cells['reportData']?.value;
+          final reportId = ctx.row.cells['reportData']?.value?.id;
           return Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // View button
               Container(
                 height: 20,
                 width: 20,
@@ -130,6 +177,31 @@ class _PostReportContentState extends State<PostReportContent> {
                   onPressed: () {
                     if (reportData != null && reportData is PostReportModel) {
                       _showReportDetails(reportData);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Delete button
+              Container(
+                height: 20,
+                width: 20,
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(
+                    Icons.delete,
+                    size: 12,
+                    color: Colors.red,
+                  ),
+                  tooltip: 'Delete Report',
+                  splashRadius: 20,
+                  onPressed: () {
+                    if (reportId != null) {
+                      _confirmDelete(reportId.toString());
                     }
                   },
                 ),
@@ -209,10 +281,10 @@ class _PostReportContentState extends State<PostReportContent> {
                       _buildDetailRow('Contact', report.currentUserContact),
                       const Divider(thickness: 0.5, color: Colors.grey),
                       const SizedBox(height: 12),
-                      _buildDetailRow('Post Code', report.postCode),
+                      _buildDetailRow('Reporter ID', report.reporterUserId),
                       const Divider(thickness: 0.5, color: Colors.grey),
                       const SizedBox(height: 12),
-                      _buildDetailRow('Post Item ID', report.postReportItemId),
+                      _buildDetailRow('Post ID', report.postId),
                       const Divider(thickness: 0.5, color: Colors.grey),
                       const SizedBox(height: 12),
                       _buildDetailRow('Report Date', report.formattedDate),
@@ -290,18 +362,81 @@ class _PostReportContentState extends State<PostReportContent> {
     );
   }
 
+  void _confirmDelete(String reportId) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text(
+          'Delete Report',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          'Are you sure you want to delete this report? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _deleteReport(reportId);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteReport(String reportId) async {
+    try {
+      final service = context.read<AdminReportPostsApiService>();
+      await service.deleteReportPost(reportId);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Report deleted successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // Refresh the list
+        _loadReports();
+      }
+    } catch (e) {
+      debugPrint('[POST_REPORT] Error deleting report: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete report: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   bool _matchesFilters(PostReportModel report) {
     if (_appliedSearchQuery.isNotEmpty) {
       final name = report.currentUsername.toLowerCase().trim();
       final email = report.currentUserMail.toLowerCase().trim();
       final contact = report.currentUserContact.toLowerCase().trim();
-      final postCode = report.postCode.toLowerCase().trim();
+      final postId = report.postId.toLowerCase().trim();
+      final reporterId = report.reporterUserId.toLowerCase().trim();
       final searchLower = _appliedSearchQuery.toLowerCase().trim();
 
       if (!name.contains(searchLower) &&
           !email.contains(searchLower) &&
           !contact.contains(searchLower) &&
-          !postCode.contains(searchLower)) {
+          !postId.contains(searchLower) &&
+          !reporterId.contains(searchLower)) {
         return false;
       }
     }
@@ -407,7 +542,7 @@ class _PostReportContentState extends State<PostReportContent> {
                                 controller: _searchController,
                                 decoration: InputDecoration(
                                   hintText:
-                                      'Search by name, email, contact, or post code...',
+                                      'Search by name, email, post ID, or reporter ID...',
                                   prefixIcon: const Icon(Icons.search),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
@@ -484,7 +619,7 @@ class _PostReportContentState extends State<PostReportContent> {
                                       filled: true,
                                       fillColor: Colors.white,
                                       hintText:
-                                          'Search by name, email, contact, or post code...',
+                                          'Search by name, email, post ID, or reporter ID...',
                                       hintStyle: const TextStyle(fontSize: 12),
                                       prefixIcon: const Icon(
                                         Icons.search,
@@ -557,149 +692,57 @@ class _PostReportContentState extends State<PostReportContent> {
                           ),
                     const SizedBox(height: 10),
                     // PlutoGrid Section
-                    StreamBuilder<DatabaseEvent>(
-                      stream: FirebaseDatabase.instance
-                          .ref('reportPostsData')
-                          .onValue,
-                      builder: (context, snapshot) {
-                        if (_isInitialLoad &&
-                            snapshot.connectionState ==
-                                ConnectionState.waiting) {
-                          return const SizedBox(
-                            height: 400,
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.green,
-                              ),
+                    Builder(
+                      builder: (context) {
+                        if (_loading) {
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(32.0),
+                              child: CircularProgressIndicator(),
                             ),
                           );
                         }
-
-                        // Mark initial load as complete once we have data
-                        if (_isInitialLoad && snapshot.hasData) {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted) {
-                              setState(() {
-                                _isInitialLoad = false;
-                              });
-                            }
-                          });
-                        }
-
-                        if (!snapshot.hasData ||
-                            snapshot.data!.snapshot.value == null) {
-                          return Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            height: 400,
-                            child: Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Image.asset(
-                                    'images/image_farm_nothing_remains.png',
-                                    height: 150,
-                                  ),
-                                  const SizedBox(height: 24),
-                                  Text(
-                                    "No post report data available",
-                                    style: TextStyle(
-                                      fontSize: isMobile ? 18 : 22,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  const Text(
-                                    "Post reports will appear here",
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }
-
-                        final data = snapshot.data!.snapshot.value as Map;
-                        final reportsData = Map<String, dynamic>.from(data);
-
-                        final List<PostReportModel> reports = [];
-
-                        reportsData.forEach((key, value) {
-                          try {
-                            final report = PostReportModel.fromMap(
-                              key,
-                              Map<String, dynamic>.from(value as Map),
-                            );
-                            if (_matchesFilters(report)) {
-                              reports.add(report);
-                            }
-                          } catch (e) {
-                            print('Error parsing post report $key: $e');
-                          }
-                        });
-
-                        // Sort by postReportDate (newest first)
-                        reports.sort(
-                          (a, b) =>
-                              b.postReportDate.compareTo(a.postReportDate),
-                        );
-
+                        final reports = _reports.where(_matchesFilters).toList();
+                        reports.sort((a, b) => b.postReportDate.compareTo(a.postReportDate));
                         if (reports.isEmpty) {
                           return Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            height: 400,
-                            child: Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Image.asset(
-                                    'images/image_farm_nothing_remains.png',
-                                    height: 150,
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.inbox_outlined,
+                                  size: 64,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(height: 24),
+                                Text(
+                                  _reports.isEmpty
+                                      ? "No post report data available"
+                                      : "You're all caught up!",
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.grey[600],
                                   ),
-                                  const SizedBox(height: 24),
-                                  const Text(
-                                    "You're all caught up!",
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  const Text(
-                                    "No post report data found matching your filters.",
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _reports.isEmpty
+                                      ? "Post reports will appear here"
+                                      : "No post report data found matching your filters.",
+                                  style: const TextStyle(fontSize: 14, color: Colors.grey),
+                                ),
+                              ],
                             ),
                           );
                         }
-
-                        // Pagination logic
                         int totalRows = reports.length;
                         int totalPages = (totalRows / _rowsPerPage).ceil();
                         int startIndex = (_currentPage - 1) * _rowsPerPage;
                         int endIndex = startIndex + _rowsPerPage;
                         if (endIndex > totalRows) endIndex = totalRows;
-
-                        final paginatedReports = reports.sublist(
-                          startIndex,
-                          endIndex,
-                        );
+                        final paginatedReports = reports.sublist(startIndex, endIndex);
 
                         final List<PlutoRow> rows = paginatedReports
                             .asMap()
@@ -721,7 +764,10 @@ class _PostReportContentState extends State<PostReportContent> {
                                   'contact': PlutoCell(
                                     value: report.currentUserContact,
                                   ),
-                                  'postCode': PlutoCell(value: report.postCode),
+                                  'reporterId': PlutoCell(
+                                    value: report.reporterUserId,
+                                  ),
+                                  'postId': PlutoCell(value: report.postId),
                                   'reportDate': PlutoCell(
                                     value: report.formattedDate,
                                   ),

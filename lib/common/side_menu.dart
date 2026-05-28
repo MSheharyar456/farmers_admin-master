@@ -3,21 +3,25 @@ import 'package:farmers_admin/screens/ads_image.dart';
 import 'package:farmers_admin/screens/dashboard/dashboard.dart';
 import 'package:farmers_admin/screens/farming_tip/farmingTip.dart';
 import 'package:farmers_admin/screens/user_management/user_screen.dart';
+import 'package:farmers_admin/screens/user_management/deleted_users_screen.dart';
 import 'package:farmers_admin/user_feedback/user_feedback_screen.dart';
 import 'package:farmers_admin/screens/commission/commission_screen.dart';
 import 'package:farmers_admin/screens/post_report/post_report_screen.dart';
 import 'package:farmers_admin/screens/notify_users/notify_users_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:farmers_admin/constants/app_colors.dart';
+import 'package:farmers_admin/services/admin_server_auth_service.dart';
 import 'package:farmers_admin/auth/auth_screen.dart';
 import 'package:farmers_admin/widgets/delete_dialog.dart';
 import 'package:farmers_admin/screens/working_status/working_status_screen.dart';
 import '../screens/post_management/post_management_screen.dart';
 import '../screens/post_management/sold_posts_screen.dart';
 import 'package:farmers_admin/screens/admin_chat/admin_chat_list_screen.dart';
+import 'package:farmers_admin/screens/crash_reports/crash_reports_screen.dart';
+import 'package:farmers_admin/utils/localization_helper.dart';
 
 class SideMenu extends StatefulWidget {
   final String? userType;
@@ -154,11 +158,29 @@ class _SideMenuState extends State<SideMenu> {
                     ),
                     _buildMenuItem(
                       context,
+                      index: 15,
+                      icon: Icons.delete_forever,
+                      text: "DELETED USERS",
+                      onTap: () => _navigateTo(context, const DeletedUsersScreen(), 15),
+                    ),
+                    _buildMenuItem(
+                      context,
                       index: 3,
                       svgPath: "images/ic_farm_feedback.svg",
                       text: "FEEDBACK",
                       onTap: () =>
                           _navigateTo(context, const UserFeedbackScreen(), 3),
+                    ),
+                    _buildMenuItem(
+                      context,
+                      index: 16,
+                      icon: Icons.bug_report_outlined,
+                      text: "CRASH REPORTS",
+                      onTap: () => _navigateTo(
+                        context,
+                        const CrashReportsScreen(),
+                        16,
+                      ),
                     ),
                     _buildMenuItem(
                       context,
@@ -289,21 +311,18 @@ class _SideMenuState extends State<SideMenu> {
                     cancelText: "Cancel",
                     showSuccessMessage: false,
                     onConfirm: () async {
+                      final authService = Provider.of<AdminServerAuthService>(context, listen: false);
+                      final userEmail = authService.currentUser?.email;
+
                       final prefs = await SharedPreferences.getInstance();
-                      // Get email before clearing all data
-                      final currentUser = FirebaseAuth.instance.currentUser;
-                      final userEmail = currentUser?.email;
+                      await prefs.clear();
 
-                      await prefs.clear(); // clear all saved data
-
-                      // Save email after clearing (so it persists for next login)
                       if (userEmail != null) {
                         await prefs.setString('lastLoggedInEmail', userEmail);
                       }
 
-                      await FirebaseAuth.instance.signOut();
+                      await authService.signOut();
                       if (context.mounted) {
-                        // Show success message before navigation
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Successfully logout'),
@@ -311,7 +330,6 @@ class _SideMenuState extends State<SideMenu> {
                             duration: Duration(milliseconds: 800),
                           ),
                         );
-                        // Navigate immediately without waiting
                         Navigator.pushAndRemoveUntil(
                           context,
                           MaterialPageRoute(builder: (_) => const AuthScreen()),
@@ -323,6 +341,41 @@ class _SideMenuState extends State<SideMenu> {
                 },
               ),
             ),
+            const SizedBox(height: 10),
+            // Language Switcher
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.language, size: 16, color: Colors.white),
+                  const SizedBox(width: 8),
+                  DropdownButton<String>(
+                    value: AppLocalizations.currentLanguageCode,
+                    dropdownColor: Colors.green.shade800,
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                    underline: const SizedBox(),
+                    isDense: true,
+                    items: const [
+                      DropdownMenuItem(value: 'en', child: Text('English')),
+                      DropdownMenuItem(value: 'ar', child: Text('العربية')),
+                      DropdownMenuItem(value: 'de', child: Text('Deutsch')),
+                      DropdownMenuItem(value: 'tr', child: Text('Türkçe')),
+                    ],
+                    onChanged: (value) async {
+                      if (value != null) {
+                        await AppLocalizations.setLanguage(value);
+                        setState(() {});
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -332,7 +385,8 @@ class _SideMenuState extends State<SideMenu> {
   Widget _buildMenuItem(
     BuildContext context, {
     required int index,
-    required String svgPath,
+    String? svgPath,
+    IconData? icon,
     required String text,
     required VoidCallback onTap,
   }) {
@@ -358,12 +412,17 @@ class _SideMenuState extends State<SideMenu> {
         ),
         child: Row(
           children: [
-            SvgPicture.asset(
-              svgPath,
-              width: 16,
-              height: 16,
-              colorFilter: ColorFilter.mode(color!, BlendMode.srcIn),
-            ),
+            if (svgPath != null)
+              SvgPicture.asset(
+                svgPath,
+                width: 16,
+                height: 16,
+                colorFilter: ColorFilter.mode(color!, BlendMode.srcIn),
+              )
+            else if (icon != null)
+              Icon(icon, size: 16, color: color)
+            else
+              const SizedBox(width: 16),
             const SizedBox(width: 10),
             Text(
               text,

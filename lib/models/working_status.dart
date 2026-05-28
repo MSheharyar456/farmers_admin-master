@@ -18,13 +18,25 @@ class WorkingStatus {
   factory WorkingStatus.fromMap(String id, Map<dynamic, dynamic> map) {
     return WorkingStatus(
       statusId: id,
-      isEnableButton: map['isEnableButton'] ?? false,
-      isSomethingWrong: map['isSomethingWrong'] ?? false,
-      workingDetails: map['workingDetails']?.toString(),
-      workingTitle: map['workingTitle']?.toString(),
+      isEnableButton: map['isEnableButton'] == true || map['isEnableButton'] == 1,
+      isSomethingWrong: map['isSomethingWrong'] == true || map['isSomethingWrong'] == 1,
+      workingDetails: map['workingDetails']?.toString() ?? map['messageAr']?.toString(),
+      workingTitle: map['workingTitle']?.toString() ?? map['messageEn']?.toString(),
       appVersionCode: map['appVersionCode'] != null
           ? int.tryParse(map['appVersionCode'].toString())
           : null,
+    );
+  }
+
+  /// From backend GET /admin/working-status item.
+  factory WorkingStatus.fromServerMap(String id, Map<String, dynamic> map) {
+    return WorkingStatus(
+      statusId: id,
+      isEnableButton: map['isEnableButton'] == true || map['isEnableButton'] == 1,
+      isSomethingWrong: map['isSomethingWrong'] == true || map['isSomethingWrong'] == 1,
+      workingDetails: map['messageAr']?.toString(),
+      workingTitle: map['messageEn']?.toString(),
+      appVersionCode: (map['appVersionCode'] as num?)?.toInt(),
     );
   }
 

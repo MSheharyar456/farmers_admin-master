@@ -1,13 +1,13 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:http/http.dart' as http;
 import '../../common/app_header.dart';
 import '../../common/side_menu.dart';
+import '../../repositories/user_repository.dart';
+import '../../services/admin_server_auth_service.dart';
 
 class EditUserScreen extends StatefulWidget {
   final Map user;
@@ -19,7 +19,8 @@ class EditUserScreen extends StatefulWidget {
 
 class _EditUserScreenState extends State<EditUserScreen> {
   final _formKey = GlobalKey<FormState>();
-  late DatabaseReference _dbRef;
+  final AdminServerAuthService _authService = AdminServerAuthService();
+  late UserRepository _userRepository;
   String loginDate = ''; // ✅ Declare it here
 
   // Controllers
@@ -29,6 +30,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
   late TextEditingController _userPostLimitController;
   late TextEditingController _userUpdatePostLimitController;
   late TextEditingController _userFollowingController;
+  late TextEditingController _totalFollowersController;
   late TextEditingController _userTotalPostsTimeController;
   //late TextEditingController _addressController;
 
@@ -42,13 +44,18 @@ class _EditUserScreenState extends State<EditUserScreen> {
   String? _uploadedImagePath;
   Uint8List? _uploadedImageBytes;
 
+  // Usage tracking
+  int _postsUsed = 0;
+  int _editsUsed = 0;
+  bool _isLoadingUsage = false;
+
   @override
   void initState() {
     super.initState();
 
     final user = widget.user;
-    final userId = user['uid'] as String?;
-    _dbRef = FirebaseDatabase.instance.ref().child('usersAuthData/$userId');
+    final userId = user['id'] as String? ?? user['uid'] as String?;
+    _userRepository = UserRepository(_authService);
 
     _nameController = TextEditingController(text: user['userName'] ?? '');
     _phoneController = TextEditingController(text: user['userContact'] ?? '');
@@ -61,6 +68,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
     );
     _userFollowingController = TextEditingController(
       text: (user['userFollowing'] ?? 0).toString(),
+    );
+    _totalFollowersController = TextEditingController(
+      text: (user['totalFollowersCount'] ?? 0).toString(),
     );
     _userTotalPostsTimeController = TextEditingController(
       text: (user['userTotalPostsTime'] ?? 0).toString(),
@@ -83,6 +93,43 @@ class _EditUserScreenState extends State<EditUserScreen> {
     }
 
     loginDate = _formatTimestamp(user['userLoginDate']);
+
+    // Fetch usage data
+    _fetchUserUsage();
+  }
+
+  /// Fetch user's posts to calculate usage statistics
+  Future<void> _fetchUserUsage() async {
+    setState(() => _isLoadingUsage = true);
+    try {
+      final user = widget.user;
+      final userId = user['id'] as String? ?? user['uid'] as String?;
+      if (userId == null) return;
+
+      // Get posts used from user data directly (passed from backend)
+      final postLimitUsed = user['userPostLimitUsed'] ?? user['postLimitUsed'] ?? 0;
+
+      // Fetch posts to calculate edit usage
+      final posts = await _userRepository.getUserPosts(userId);
+
+      // Calculate edits used (sum of postIsUpdate across all posts)
+      int totalEdits = 0;
+      for (final post in posts) {
+        final updateCount = post['postIsUpdate'] ?? post['isUpdate'] ?? 0;
+        totalEdits += updateCount is int ? updateCount : int.tryParse(updateCount.toString()) ?? 0;
+      }
+
+      setState(() {
+        _postsUsed = postLimitUsed is int ? postLimitUsed : int.tryParse(postLimitUsed.toString()) ?? 0;
+        _editsUsed = totalEdits;
+      });
+
+      print('[EDIT_USER] Usage fetched - postsUsed: $_postsUsed, editsUsed: $_editsUsed');
+    } catch (e) {
+      print('[EDIT_USER] Error fetching usage: $e');
+    } finally {
+      setState(() => _isLoadingUsage = false);
+    }
   }
 
   // Method to cache Google profile image to Firebase Storage
@@ -94,7 +141,14 @@ class _EditUserScreenState extends State<EditUserScreen> {
 
       print('Attempting to cache Google image...');
 
-      final userId = widget.user['uid'] as String?;
+      final userId =
+          widget.user['id'] as String? ?? widget.user['uid'] as String?;
+      if (userId == null || userId.isEmpty) {
+        setState(() {
+          _isImageLoading = false;
+        });
+        return;
+      }
 
       // First, check if we already have a cached version in Firebase Storage
       try {
@@ -114,7 +168,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
 
         // Update database if it's still pointing to Google URL
         if (widget.user['userImage'] != cachedUrl) {
-          await _dbRef.update({'userImage': cachedUrl});
+          await _userRepository.updateUser(userId, {'profileImage': cachedUrl});
         }
 
         return;
@@ -142,8 +196,8 @@ class _EditUserScreenState extends State<EditUserScreen> {
         // Get the download URL
         final downloadUrl = await storageRef.getDownloadURL();
 
-        // Update Firebase Realtime Database
-        await _dbRef.update({'userImage': downloadUrl});
+        // Update backend database
+        await _userRepository.updateUser(userId, {'profileImage': downloadUrl});
 
         // Update local state
         setState(() {
@@ -189,7 +243,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
 
   String _formatTimestamp(dynamic timestamp) {
     try {
-      if (timestamp == null) return "N/A";
+      if (timestamp == null || timestamp == 0) return "N/A";
 
       int millis;
       if (timestamp is int) {
@@ -199,17 +253,32 @@ class _EditUserScreenState extends State<EditUserScreen> {
       } else if (timestamp is Map && timestamp.containsKey('_seconds')) {
         // sometimes Firebase stores in weird map structure
         millis = (timestamp['_seconds'] * 1000).toInt();
-      } else if (timestamp is Timestamp) {
-        // Firestore Timestamp type
+      } else if (timestamp is DateTime) {
         millis = timestamp.millisecondsSinceEpoch;
+      } else if (timestamp is String) {
+        final parsed = DateTime.tryParse(timestamp);
+        if (parsed == null) return "N/A";
+        millis = parsed.millisecondsSinceEpoch;
+      } else if (timestamp is Map &&
+          timestamp.containsKey('millisecondsSinceEpoch')) {
+        final raw = timestamp['millisecondsSinceEpoch'];
+        if (raw is int) {
+          millis = raw;
+        } else if (raw is double) {
+          millis = raw.toInt();
+        } else {
+          return "N/A";
+        }
       } else {
-        return "Invalid Date";
+        return "N/A";
       }
+
+      if (millis == 0) return "N/A";
 
       final date = DateTime.fromMillisecondsSinceEpoch(millis);
       return "${date.day}-${date.month}-${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}";
     } catch (e) {
-      return "Invalid Date";
+      return "N/A";
     }
   }
 
@@ -233,6 +302,8 @@ class _EditUserScreenState extends State<EditUserScreen> {
             int.tryParse(_userUpdatePostLimitController.text.trim()) ?? 0,
         "userFollowing":
             int.tryParse(_userFollowingController.text.trim()) ?? 0,
+        "userFollowerBoost":
+            (int.tryParse(_totalFollowersController.text.trim()) ?? 0) - (widget.user['actualFollowersCount'] ?? 0),
         "userTotalPostsTime":
             int.tryParse(_userTotalPostsTimeController.text.trim()) ?? 0,
         "userTotalPostsExpiryTime": DateTime.now()
@@ -242,16 +313,12 @@ class _EditUserScreenState extends State<EditUserScreen> {
         // "updatedAt": DateTime.now().millisecondsSinceEpoch,
       };
 
-      await _dbRef
-          .update(updatedData)
-          .timeout(
-            const Duration(seconds: 30),
-            onTimeout: () {
-              throw Exception(
-                'Connection timeout. Please check your internet connection.',
-              );
-            },
-          );
+      final userId = widget.user['id'] as String? ?? widget.user['uid'] as String?;
+      if (userId == null) {
+        throw Exception('User ID not found');
+      }
+
+      await _userRepository.updateUser(userId, updatedData);
 
       if (!mounted) return;
 
@@ -358,6 +425,93 @@ class _EditUserScreenState extends State<EditUserScreen> {
       ],
     );
   }
+  /// Build a text field for limits with usage info displayed
+  Widget _buildLimitTextField({
+    required String label,
+    required TextEditingController controller,
+    required int used,
+    required int limit,
+    String? Function(String?)? validator,
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
+  }) {
+    final remaining = limit - used;
+    final color = remaining <= 0 ? Colors.red : (remaining <= 1 ? Colors.orange : Colors.green);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Colors.black,
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (_isLoadingUsage)
+              SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: color.withOpacity(0.3)),
+                ),
+                child: Text(
+                  'Used: $used, Remaining: $remaining',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        SizedBox(
+          height: 40,
+          child: TextFormField(
+            style: const TextStyle(fontSize: 12),
+            controller: controller,
+            validator: validator,
+            keyboardType: keyboardType,
+            enabled: !_isLoading,
+            inputFormatters: inputFormatters,
+            onChanged: (_) {
+              // Recalculate remaining when limit changes
+              setState(() {});
+            },
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Colors.grey[50],
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(5),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.green, width: 2),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 0,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildTextField({
     required String label,
     required TextEditingController controller,
@@ -575,6 +729,33 @@ class _EditUserScreenState extends State<EditUserScreen> {
     );
   }
 
+  /// Parses hex color string to Color
+  Color _parseHexColor(String? hex, {Color fallback = Colors.grey}) {
+    if (hex == null || hex.isEmpty) return fallback;
+    try {
+      final h = hex.replaceAll('#', '').trim();
+      if (h.length == 6) {
+        return Color(int.parse('FF$h', radix: 16));
+      } else if (h.length == 8) {
+        return Color(int.parse(h, radix: 16));
+      }
+    } catch (e) {
+      print('Error parsing color: $e');
+    }
+    return fallback;
+  }
+
+  /// Get initials from user name
+  String get _userInitials {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) return '?';
+    final parts = name.split(RegExp(r'\s+'));
+    if (parts.length >= 2) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return name[0].toUpperCase();
+  }
+
   Widget _buildImagePreview() {
     // Show loading indicator while caching/loading image
     if (_isImageLoading) {
@@ -586,43 +767,46 @@ class _EditUserScreenState extends State<EditUserScreen> {
           borderRadius: BorderRadius.circular(12),
         ),
         child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(color: Colors.green),
-              SizedBox(height: 12),
-              Text(
-                'Loading image...',
-                style: TextStyle(color: Colors.grey[600], fontSize: 12),
-              ),
-            ],
-          ),
+          child: CircularProgressIndicator(color: Colors.green),
         ),
       );
     }
 
-    // Check if image URL exists and is NOT from googleusercontent (to avoid 429 errors)
-    if (_uploadedImagePath != null &&
+    // Get user's profile color from the user data
+    final user = widget.user;
+    final colorHex = user['profileColor'] as String? ?? user['profile_color'] as String?;
+    final bgColor = _parseHexColor(colorHex, fallback: const Color(0xFFDAD721));
+
+    // Check if image URL exists, is not empty, and is not default_pfp.jpg
+    final hasValidImage = _uploadedImagePath != null &&
         _uploadedImagePath!.isNotEmpty &&
-        !_uploadedImagePath!.contains('googleusercontent.com')) {
-      print('Attempting to load image from: $_uploadedImagePath');
-      return SizedBox(
+        _uploadedImagePath != 'default_pfp.jpg' &&
+        !_uploadedImagePath!.endsWith('default_pfp.jpg') &&
+        !_uploadedImagePath!.contains('googleusercontent.com');
+
+    if (hasValidImage) {
+      print('Loading user profile image: $_uploadedImagePath');
+      return Container(
         height: 210,
         width: 260,
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: Image.network(
             _uploadedImagePath!,
+            width: 260,
+            height: 210,
             fit: BoxFit.cover,
             loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) {
-                return child;
-              }
+              if (loadingProgress == null) return child;
               return Container(
-                color: Colors.grey[200],
+                color: bgColor,
                 child: Center(
                   child: CircularProgressIndicator(
-                    color: Colors.green,
+                    color: Colors.white,
                     value: loadingProgress.expectedTotalBytes != null
                         ? loadingProgress.cumulativeBytesLoaded /
                               loadingProgress.expectedTotalBytes!
@@ -633,11 +817,16 @@ class _EditUserScreenState extends State<EditUserScreen> {
             },
             errorBuilder: (context, error, stackTrace) {
               print('Error loading image: $error');
-              return Image.asset(
-                "images/profile.jpg",
-                width: 200,
-                height: 200,
-                fit: BoxFit.cover,
+              // Fallback to initials on error
+              return Center(
+                child: Text(
+                  _userInitials,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 72,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               );
             },
           ),
@@ -645,17 +834,22 @@ class _EditUserScreenState extends State<EditUserScreen> {
       );
     }
 
-    // For Google images or no image, show default profile image
-    return SizedBox(
+    // No valid image - show colored rectangle with initials
+    return Container(
       height: 200,
       width: 200,
-      child: ClipRRect(
+      decoration: BoxDecoration(
+        color: bgColor,
         borderRadius: BorderRadius.circular(12),
-        child: Image.asset(
-          "images/profile.jpg",
-          width: 200,
-          height: 200,
-          fit: BoxFit.cover,
+      ),
+      child: Center(
+        child: Text(
+          _userInitials,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 72,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );
@@ -868,10 +1062,12 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                         Row(
                                           children: [
                                             Expanded(
-                                              child: _buildTextField(
+                                              child: _buildLimitTextField(
                                                 label: "User Post Limit",
                                                 controller:
                                                     _userPostLimitController,
+                                                used: _postsUsed,
+                                                limit: int.tryParse(_userPostLimitController.text) ?? 0,
                                                 keyboardType:
                                                     TextInputType.number,
                                                 inputFormatters: [
@@ -891,10 +1087,12 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                             ),
                                             const SizedBox(width: 10),
                                             Expanded(
-                                              child: _buildTextField(
+                                              child: _buildLimitTextField(
                                                 label: "User Update Post Limit",
                                                 controller:
                                                     _userUpdatePostLimitController,
+                                                used: _editsUsed,
+                                                limit: int.tryParse(_userUpdatePostLimitController.text) ?? 0,
                                                 keyboardType:
                                                     TextInputType.number,
                                                 inputFormatters: [
@@ -917,11 +1115,34 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                         const SizedBox(height: 10),
                                         Row(
                                           children: [
+                                            // Expanded(
+                                            //   child: _buildTextField(
+                                            //     label: "User Following (Min Required)",
+                                            //     controller:
+                                            //         _userFollowingController,
+                                            //     keyboardType:
+                                            //         TextInputType.number,
+                                            //     inputFormatters: [
+                                            //       FilteringTextInputFormatter.digitsOnly
+                                            //     ],
+                                            //     validator: (v) {
+                                            //       if (v != null &&
+                                            //           v.isNotEmpty) {
+                                            //         if (int.tryParse(v) ==
+                                            //             null) {
+                                            //           return "Enter valid number";
+                                            //         }
+                                            //       }
+                                            //       return null;
+                                            //     },
+                                            //   ),
+                                            // ),
+
                                             Expanded(
                                               child: _buildTextField(
-                                                label: "User Following",
+                                                label: "Total Followers",
                                                 controller:
-                                                    _userFollowingController,
+                                                    _totalFollowersController,
                                                 keyboardType:
                                                     TextInputType.number,
                                                 inputFormatters: [
@@ -944,9 +1165,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                               child: _buildTextField(
                                                 label: "User Total Post Timer",
                                                 controller:
-                                                    _userTotalPostsTimeController,
+                                                _userTotalPostsTimeController,
                                                 keyboardType:
-                                                    TextInputType.number,
+                                                TextInputType.number,
                                                 inputFormatters: [
                                                   FilteringTextInputFormatter.digitsOnly
                                                 ],
@@ -990,7 +1211,6 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                             )
                                           ],
                                         ),
-
 
                                         const SizedBox(height: 20),
                                         Row(
@@ -1140,6 +1360,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
     _userPostLimitController.dispose();
     _userUpdatePostLimitController.dispose();
     _userFollowingController.dispose();
+    _totalFollowersController.dispose();
     _userTotalPostsTimeController.dispose();
     //_addressController.dispose();
     super.dispose();

@@ -1,4 +1,7 @@
-import 'package:farmers_admin/screens/activity/activity_login_screen.dart';
+import 'dart:async';
+
+import 'package:dio/dio.dart';
+import 'package:farmers_admin/config/api_config.dart';
 import 'package:farmers_admin/screens/app_setting/app_setting_screen.dart';
 import 'package:farmers_admin/screens/admin_chat/admin_chat_list_screen.dart';
 import 'package:farmers_admin/screens/ads_image.dart';
@@ -11,13 +14,15 @@ import 'package:farmers_admin/screens/user_management/user_screen.dart';
 import 'package:farmers_admin/screens/working_status/working_status_screen.dart';
 import 'package:farmers_admin/screens/commission/commission_screen.dart';
 import 'package:farmers_admin/screens/post_report/post_report_screen.dart';
+import 'package:farmers_admin/screens/crash_reports/crash_reports_screen.dart';
+import 'package:farmers_admin/screens/user_management/deleted_users_screen.dart';
 import 'package:farmers_admin/user_feedback/user_feedback_screen.dart';
+import 'package:farmers_admin/services/admin_server_auth_service.dart';
+import 'package:farmers_admin/models/admin_user.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:bcrypt/bcrypt.dart';
 
 class AuthScreen extends StatefulWidget {
   final String? errorMessage;
@@ -27,6 +32,8 @@ class AuthScreen extends StatefulWidget {
   @override
   State<AuthScreen> createState() => _AuthScreenState();
 }
+
+
 
 class _AuthScreenState extends State<AuthScreen> {
   bool _isLogin = true;
@@ -41,8 +48,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isOptionkeyVisible = false;
   bool _isPasswordVisible = false;
   String? _errorMessage;
-
-  final dbRef = FirebaseDatabase.instance.ref();
+  StreamSubscription<AdminUser?>? _authSubscription;
 
   Future<void> _loadLastLoggedInEmail() async {
     final prefs = await SharedPreferences.getInstance();
@@ -52,26 +58,31 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  void _navigateToDestination(Widget destination) {
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => destination),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
 
-    // Load last logged-in email after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadLastLoggedInEmail();
     });
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        // 🔥 Get saved route from SharedPreferences
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authService = Provider.of<AdminServerAuthService>(context, listen: false);
+      _authSubscription = authService.authStateChanges.listen((AdminUser? user) async {
+        if (user == null || !mounted) return;
         final prefs = await SharedPreferences.getInstance();
         final savedIndex = prefs.getInt('activeMenuIndex') ?? 0;
-        final userType = prefs.getString('userType');
+        final userType = user.userType;
 
         Widget destination;
-
-        // Navigate to saved page based on index
         switch (savedIndex) {
           case 0:
             destination = DashboardScreen(userType: userType);
@@ -105,25 +116,27 @@ class _AuthScreenState extends State<AuthScreen> {
             break;
           case 10:
             destination = const SoldPostsScreen();
+            break;
           case 11:
             destination = const NotifyUsersScreen();
+            break;
           case 12:
             destination = const AdminChatListScreen();
+            break;
+          case 15:
+            destination = const DeletedUsersScreen();
+            break;
+          case 16:
+            destination = const CrashReportsScreen();
             break;
           default:
             destination = DashboardScreen(userType: userType);
         }
-
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => destination),
-          );
-        }
+        if (mounted) _navigateToDestination(destination);
       });
-    } else {
-      _errorMessage = widget.errorMessage;
-    }
+    });
+
+    _errorMessage = widget.errorMessage;
   }
 
   Future<void> _submit() async {
@@ -134,181 +147,67 @@ class _AuthScreenState extends State<AuthScreen> {
       _errorMessage = null;
     });
 
+    final authService = Provider.of<AdminServerAuthService>(context, listen: false);
+    final enteredEmail = _emailController.text.trim();
+    final enteredPassword = _passwordController.text.trim();
+    final enteredPasskey = _passkeyController.text.trim();
+    final enteredOptionkey = _optionkeyController.text.trim();
+
+    print('DEBUG: AuthScreen._submit() called. _isLogin: $_isLogin');
+    print('DEBUG: Email: $enteredEmail');
+
     try {
-      final enteredEmail = _emailController.text.trim();
-      final enteredPassword = _passwordController.text.trim();
-      final enteredPasskey = _passkeyController.text.trim();
-      final enteredOptionkey = _optionkeyController.text.trim();
-
       if (_isLogin) {
-        // 🟢 LOGIN FLOW - TWO PHASE AUTHENTICATION
-
-        // Phase 1: Check if user exists in adminUsers database
-        final usersSnapshot = await dbRef.child("adminUsers").get();
-
-        if (!usersSnapshot.exists) {
-          throw FirebaseAuthException(
-            code: 'no-users',
-            message: 'No admin users found. Please contact administrator.',
-          );
-        }
-
-        bool userFound = false;
-        String? userType;
-        String? userRole;
-        String? foundUserKey;
-
-        // Find user by email and validate keys
-        for (var child in usersSnapshot.children) {
-          final userData = child.value as Map?;
-          if (userData == null) continue;
-
-          if (userData['email'] == enteredEmail) {
-            userFound = true;
-            foundUserKey = child.key;
-
-            // Read stored hashes (migration: support older plaintext fields if present)
-            final storedpasskey = userData['passkey']?.toString() ?? "";
-            final storedoptionkey = userData['optionkey']?.toString() ?? "";
-            final storedPasskeyPlain = userData['passkey']?.toString();
-            final storedOptionkeyPlain = userData['optionkey']?.toString();
-            // Determine user type based on optionkey presence in input
-            if (enteredOptionkey.isNotEmpty) {
-              // User attempting admin login
-              // If no optionkey hash present but plaintext exists (legacy), treat as unauthorized and require migration.
-              if (storedoptionkey.isEmpty &&
-                  (storedOptionkeyPlain == null ||
-                      storedOptionkeyPlain.isEmpty)) {
-                throw FirebaseAuthException(
-                  code: 'unauthorized-key',
-                  message: 'This account does not have admin privileges.',
-                );
-              }
-
-              // Verify both passkey and optionkey using BCrypt (or fall back to plaintext equality for legacy data)
-              final passkeyValid = storedpasskey.isNotEmpty
-                  ? BCrypt.checkpw(enteredPasskey, storedpasskey)
-                  : (storedPasskeyPlain != null &&
-                        enteredPasskey == storedPasskeyPlain);
-
-              final optionkeyValid = storedoptionkey.isNotEmpty
-                  ? BCrypt.checkpw(enteredOptionkey, storedoptionkey)
-                  : (storedOptionkeyPlain != null &&
-                        enteredOptionkey == storedOptionkeyPlain);
-
-              if (!passkeyValid || !optionkeyValid) {
-                throw FirebaseAuthException(
-                  code: 'invalid-admin-keys',
-                  message: 'Invalid admin keys.',
-                );
-              }
-
-              userType = "admin";
-            } else {
-              // User attempting sub-admin login - validate passkey only
-              if (enteredPasskey.isEmpty) {
-                throw FirebaseAuthException(
-                  code: 'missing-passkey',
-                  message: 'Please enter your passkey.',
-                );
-              }
-
-              final passkeyValid = storedpasskey.isNotEmpty
-                  ? BCrypt.checkpw(enteredPasskey, storedpasskey)
-                  : (storedPasskeyPlain != null &&
-                        enteredPasskey == storedPasskeyPlain);
-
-              if (!passkeyValid) {
-                throw FirebaseAuthException(
-                  code: 'invalid-passkey',
-                  message: 'Invalid passkey. Please try again.',
-                );
-              }
-
-              userType = "sub-admin";
-              // Capture the role for sub-admins
-              userRole = userData['role']?.toString() ?? 'full';
-            }
-
-            break;
-          }
-        }
-
-        if (!userFound) {
-          throw FirebaseAuthException(
-            code: 'user-not-found',
-            message: 'No account found with this email.',
-          );
-        }
-
-        // Save userType and userRole in SharedPreferences before Firebase auth
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('userType', userType ?? "sub-admin");
-        // Store role for sub-admins (super admins don't need role check)
-        if (userRole != null) {
-          await prefs.setString('userRole', userRole);
-        } else {
-          await prefs.remove('userRole'); // Clear role for super admins
-        }
-
-        // Phase 2: Authenticate with Firebase Authentication
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
+        print('DEBUG: Calling authService.login()');
+        final user = await authService.login(
           email: enteredEmail,
           password: enteredPassword,
+          passkey: enteredPasskey,
+          optionkey: enteredOptionkey.isEmpty ? null : enteredOptionkey,
         );
+        print('DEBUG: authService.login() returned successfully for user: ${user.email}');
 
-        // 🔥 ADD THIS: Reset menu to Dashboard on fresh login
-        await SharedPreferences.getInstance();
-        await prefs.setInt('activeMenuIndex', 0); // Reset to Dashboard
-        await prefs.setBool('isFreshLogin', true); // Mark as fresh login
+        print('DEBUG: Getting SharedPreferences instance...');
+        final prefs = await SharedPreferences.getInstance();
+        print('DEBUG: SharedPreferences instance obtained.');
+        
+        print('DEBUG: Saving user info to SharedPreferences...');
+        await prefs.setString('user_id', user.id);
+        await prefs.setString('user_email', user.email);
+        await prefs.setString('user_name', user.username ?? '');
+        await prefs.setString('userType', user.userType);
+        await prefs.setString('userRole', user.role);
+        await prefs.setInt('activeMenuIndex', 0);
+        await prefs.setBool('isFreshLogin', true);
+        print('DEBUG: User info saved to SharedPreferences.');
 
-        // Success - Navigate to Dashboard
         if (mounted) {
+          print('DEBUG: Navigating to DashboardScreen...');
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (_) =>
-                  DashboardScreen(userType: userType ?? "sub-admin"),
+              builder: (_) => DashboardScreen(userType: user.userType),
             ),
           );
+        } else {
+          print('DEBUG: AuthScreen no longer mounted, skipping navigation.');
         }
       } else {
-        // 🟩 SIGN UP FLOW - Creates Sub-Admin
-
         final enteredUsername = _usernameController.text.trim();
-
-        // Prevent signup with optionkey (optional validation)
         if (enteredOptionkey.isNotEmpty) {
-          throw FirebaseAuthException(
-            code: 'invalid-signup',
-            message: 'Sub-admin accounts cannot have optionkey.',
-          );
+          setState(() {
+            _errorMessage = 'Sub-admin accounts cannot have optionkey.';
+          });
+          if (mounted) setState(() => _isLoading = false);
+          return;
         }
 
-        // Create user in Firebase Authentication first
-        final userCredential = await FirebaseAuth.instance
-            .createUserWithEmailAndPassword(
-              email: enteredEmail,
-              password: enteredPassword,
-            );
-
-        // Store user data in adminUsers database
-        // DO NOT store plaintext password. Hash the passkey before storing.
-        final passkey = enteredPasskey.isNotEmpty
-            ? BCrypt.hashpw(enteredPasskey, BCrypt.gensalt())
-            : "";
-        await dbRef.child("adminUsers").child(userCredential.user!.uid).set({
-          "username": enteredUsername,
-          "email": enteredEmail,
-          // intentionally not storing the Firebase auth password
-          "passkey": passkey,
-          // Sub-admin has no optionkey; keep optionkey empty
-          "optionkey": "",
-          "createdAt": DateTime.now().toIso8601String(),
-        });
-
-        // Sign out after signup
-        await FirebaseAuth.instance.signOut();
+        await authService.signUp(
+          email: enteredEmail,
+          password: enteredPassword,
+          username: enteredUsername,
+          passkey: enteredPasskey,
+        );
 
         if (mounted) {
           setState(() {
@@ -330,37 +229,41 @@ class _AuthScreenState extends State<AuthScreen> {
           );
         }
       }
-    } on FirebaseAuthException catch (e) {
-      setState(() {
-        switch (e.code) {
-          case 'user-not-found':
-            _errorMessage = 'No account found for this email.';
-            break;
-          case 'wrong-password':
-            _errorMessage = 'Incorrect password. Please try again.';
-            break;
-          case 'invalid-email':
-            _errorMessage = 'Please enter a valid email address.';
-            break;
-          case 'email-already-in-use':
-            _errorMessage = 'This email is already registered.';
-            break;
-          case 'missing-admin-keys':
-          case 'invalid-admin-keys':
-          case 'unauthorized-key':
-          case 'missing-passkey':
-          case 'invalid-passkey':
-          case 'invalid-signup':
-          case 'no-users':
-            _errorMessage = e.message;
-            break;
-          default:
-            _errorMessage = 'Authentication failed. Please try again.';
+    } on AdminAuthException catch (e) {
+      print('DEBUG: AdminAuthException: ${e.message}');
+      // Show user-friendly error message (truncate if too long)
+      final msg = e.message;
+      setState(() => _errorMessage = msg.length > 150 ? '${msg.substring(0, 150)}...' : msg);
+    } on DioException catch (e) {
+      print('DEBUG: DioException: ${e.type} - ${e.message}');
+      // Handle network/connection errors with user-friendly messages
+      String userMessage;
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.receiveTimeout) {
+        userMessage = 'Connection timed out. Please check your internet connection and try again.';
+      } else if (e.type == DioExceptionType.connectionError) {
+        userMessage = 'Network error. Please check your internet connection.';
+      } else if (e.type == DioExceptionType.badResponse) {
+        final statusCode = e.response?.statusCode;
+        if (statusCode == 401) {
+          userMessage = 'Invalid credentials. Please check your email, password, and passkey.';
+        } else if (statusCode == 404) {
+          userMessage = 'Server not found. Please try again later.';
+        } else if (statusCode != null && statusCode >= 500) {
+          userMessage = 'Server error. Please try again later.';
+        } else {
+          userMessage = 'Something went wrong. Please try again.';
         }
-      });
-    } catch (e) {
+      } else {
+        userMessage = 'Network error. Please check your connection and try again.';
+      }
+      setState(() => _errorMessage = userMessage);
+    } catch (e, stack) {
+      print('DEBUG: General error during login SUBMIT: $e');
+      print('DEBUG: Stack trace: $stack');
       setState(() {
-        _errorMessage = 'An error occurred. Please try again.';
+        _errorMessage = 'Something went wrong. Please try again.';
       });
     }
 
@@ -369,189 +272,450 @@ class _AuthScreenState extends State<AuthScreen> {
 
   void _showForgotPasswordDialog() {
     final emailController = TextEditingController();
-
-    // Pre-fill with current email if available
-    if (_emailController.text.isNotEmpty) {
-      emailController.text = _emailController.text;
-    }
+    final passkeyController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool isLoading = false;
+    bool showNewPassword = false;
+    bool showConfirmPassword = false;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        contentPadding: const EdgeInsets.all(24),
-        actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-        title: const Padding(
-          padding: EdgeInsets.only(bottom: 8),
-          child: Text(
-            'Forgot Password',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          contentPadding: const EdgeInsets.all(24),
+          actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+          title: const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Reset Password',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
           ),
+          content: SizedBox(
+            width: 400,
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: emailController,
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      hintText: 'Enter your email',
+                      prefixIcon: Icon(Icons.email, color: Colors.green),
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) return 'Please enter email';
+                      if (!value.contains('@')) return 'Please enter valid email';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: passkeyController,
+                    decoration: const InputDecoration(
+                      labelText: 'Current Passkey',
+                      hintText: 'Enter your current passkey',
+                      prefixIcon: Icon(Icons.vpn_key, color: Colors.green),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) return 'Please enter passkey';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: newPasswordController,
+                    decoration: InputDecoration(
+                      labelText: 'New Password',
+                      hintText: 'Enter new password (min 6 chars)',
+                      prefixIcon: const Icon(Icons.lock, color: Colors.green),
+                      suffixIcon: IconButton(
+                        icon: Icon(showNewPassword ? Icons.visibility : Icons.visibility_off, color: Colors.grey),
+                        onPressed: () => setState(() => showNewPassword = !showNewPassword),
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                    obscureText: !showNewPassword,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) return 'Please enter new password';
+                      if (value.length < 6) return 'Password must be at least 6 characters';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: confirmPasswordController,
+                    decoration: InputDecoration(
+                      labelText: 'Confirm New Password',
+                      hintText: 'Re-enter new password',
+                      prefixIcon: const Icon(Icons.lock_outline, color: Colors.green),
+                      suffixIcon: IconButton(
+                        icon: Icon(showConfirmPassword ? Icons.visibility : Icons.visibility_off, color: Colors.grey),
+                        onPressed: () => setState(() => showConfirmPassword = !showConfirmPassword),
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                    obscureText: !showConfirmPassword,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) return 'Please confirm password';
+                      if (value != newPasswordController.text) return 'Passwords do not match';
+                      return null;
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isLoading ? null : () => Navigator.pop(context),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Cancel', style: TextStyle(fontSize: 16, color: Colors.black54)),
+            ),
+            ElevatedButton(
+              onPressed: isLoading ? null : () async {
+                if (!formKey.currentState!.validate()) return;
+
+                setState(() => isLoading = true);
+
+                try {
+                  final dio = Dio(BaseOptions(
+                    baseUrl: apiBaseUrl,
+                    connectTimeout: const Duration(seconds: 30),
+                    receiveTimeout: const Duration(seconds: 30),
+                  ));
+
+                  final res = await dio.post('/admin/auth/reset-password', data: {
+                    'email': emailController.text.trim(),
+                    'passkey': passkeyController.text.trim(),
+                    'newPassword': newPasswordController.text.trim(),
+                  });
+
+                  if (res.data != null && res.data['success'] == true) {
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(res.data['message'] ?? 'Password reset successfully!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  } else {
+                    throw Exception(res.data?['message'] ?? 'Reset failed');
+                  }
+                } on DioException catch (e) {
+                  String userMessage;
+                  if (e.type == DioExceptionType.connectionTimeout ||
+                      e.type == DioExceptionType.sendTimeout ||
+                      e.type == DioExceptionType.receiveTimeout) {
+                    userMessage = 'Connection timed out. Please check your internet connection.';
+                  } else if (e.type == DioExceptionType.connectionError) {
+                    userMessage = 'Network error. Please check your internet connection.';
+                  } else if (e.type == DioExceptionType.badResponse) {
+                    final statusCode = e.response?.statusCode;
+                    final serverMsg = e.response?.data?['message'];
+                    if (serverMsg != null && serverMsg.toString().isNotEmpty) {
+                      userMessage = serverMsg.toString().length > 100 
+                          ? '${serverMsg.toString().substring(0, 100)}...' 
+                          : serverMsg.toString();
+                    } else if (statusCode == 401) {
+                      userMessage = 'Invalid credentials. Please check your information.';
+                    } else if (statusCode == 404) {
+                      userMessage = 'Server not found. Please try again later.';
+                    } else if (statusCode != null && statusCode >= 500) {
+                      userMessage = 'Server error. Please try again later.';
+                    } else {
+                      userMessage = 'Reset failed. Please try again.';
+                    }
+                  } else {
+                    userMessage = 'Network error. Please check your connection.';
+                  }
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(userMessage), backgroundColor: Colors.red),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Something went wrong. Please try again.'), 
+                        backgroundColor: Colors.red
+                      ),
+                    );
+                  }
+                } finally {
+                  if (context.mounted) {
+                    setState(() => isLoading = false);
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0FC570),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                elevation: 2,
+              ),
+              child: isLoading
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Text('Reset Password', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            ),
+          ],
         ),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Enter your email address to verify your account and receive a password reset link.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.black87,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: emailController,
-                decoration: InputDecoration(
-                  labelText: 'Email',
-                  labelStyle: const TextStyle(color: Colors.grey),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: Colors.grey,
-                      width: 1.5,
-                    ),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: Colors.grey,
-                      width: 1.5,
-                    ),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF0FC570),
-                      width: 2,
-                    ),
-                  ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Colors.red, width: 1.5),
-                  ),
-                  focusedErrorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Colors.red, width: 2),
-                  ),
-                  prefixIcon: const Icon(Icons.email, color: Colors.grey),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 16,
-                  ),
-                  floatingLabelStyle: const TextStyle(color: Color(0xFF0FC570)),
-                ),
-                keyboardType: TextInputType.emailAddress,
-                cursorColor: const Color(0xFF0FC570),
-              ),
-            ],
+      ),
+    );
+  }
+
+  void _showForgotEmailDialog() {
+    final usernameController = TextEditingController();
+    final passkeyController = TextEditingController();
+    final optionkeyController = TextEditingController();
+    final newEmailController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool isLoading = false;
+    bool isVerified = false;
+    String? errorMsg;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          contentPadding: const EdgeInsets.all(24),
+          actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+          title: Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              isVerified ? 'Enter New Email' : 'Forgot Email',
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
           ),
+          content: SizedBox(
+            width: 400,
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (errorMsg != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error, color: Colors.red.shade700, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              errorMsg!,
+                              style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  if (!isVerified) ...[
+                    TextFormField(
+                      controller: usernameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Username',
+                        hintText: 'Enter your username',
+                        prefixIcon: Icon(Icons.person, color: Colors.green),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) return 'Please enter username';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: passkeyController,
+                      decoration: const InputDecoration(
+                        labelText: 'Passkey',
+                        hintText: 'Enter your passkey',
+                        prefixIcon: Icon(Icons.vpn_key, color: Colors.green),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) return 'Please enter passkey';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: optionkeyController,
+                      decoration: const InputDecoration(
+                        labelText: 'Optionkey',
+                        hintText: 'Enter your optionkey',
+                        prefixIcon: Icon(Icons.settings_remote, color: Colors.green),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) return 'Please enter optionkey';
+                        return null;
+                      },
+                    ),
+                  ] else ...[
+                    const Text(
+                      'Identity verified! Enter your new email address.',
+                      style: TextStyle(fontSize: 14, color: Colors.green),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: newEmailController,
+                      decoration: const InputDecoration(
+                        labelText: 'New Email',
+                        hintText: 'Enter new email address',
+                        prefixIcon: Icon(Icons.email, color: Colors.green),
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) return 'Please enter new email';
+                        if (!value.contains('@')) return 'Please enter valid email';
+                        return null;
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isLoading ? null : () => Navigator.pop(context),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Cancel', style: TextStyle(fontSize: 16, color: Colors.black54)),
+            ),
+            ElevatedButton(
+              onPressed: isLoading ? null : () async {
+                if (!formKey.currentState!.validate()) return;
+
+                setState(() {
+                  isLoading = true;
+                  errorMsg = null;
+                });
+
+                try {
+                  final dio = Dio(BaseOptions(
+                    baseUrl: apiBaseUrl,
+                    connectTimeout: const Duration(seconds: 30),
+                    receiveTimeout: const Duration(seconds: 30),
+                  ));
+
+                  if (!isVerified) {
+                    // Step 1: Verify identity first by calling a verify endpoint
+                    final verifyRes = await dio.post('/admin/auth/verify-identity', data: {
+                      'username': usernameController.text.trim(),
+                      'passkey': passkeyController.text.trim(),
+                      'optionkey': optionkeyController.text.trim(),
+                    });
+
+                    if (verifyRes.data != null && verifyRes.data['success'] == true) {
+                      setState(() {
+                        isVerified = true;
+                        isLoading = false;
+                      });
+                    } else {
+                      throw Exception(verifyRes.data?['message'] ?? 'Verification failed');
+                    }
+                  } else {
+                    // Step 2: Update email
+                    final res = await dio.post('/admin/auth/verify-and-update-email', data: {
+                      'username': usernameController.text.trim(),
+                      'passkey': passkeyController.text.trim(),
+                      'optionkey': optionkeyController.text.trim(),
+                      'newEmail': newEmailController.text.trim(),
+                    });
+
+                    if (res.data != null && res.data['success'] == true) {
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(res.data['message'] ?? 'Email updated successfully!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    } else {
+                      throw Exception(res.data?['message'] ?? 'Update failed');
+                    }
+                  }
+                } on DioException catch (e) {
+                  String userMessage;
+                  if (e.type == DioExceptionType.connectionTimeout ||
+                      e.type == DioExceptionType.sendTimeout ||
+                      e.type == DioExceptionType.receiveTimeout) {
+                    userMessage = 'Connection timed out. Please check your internet connection.';
+                  } else if (e.type == DioExceptionType.connectionError) {
+                    userMessage = 'Network error. Please check your internet connection.';
+                  } else if (e.type == DioExceptionType.badResponse) {
+                    final statusCode = e.response?.statusCode;
+                    final serverMsg = e.response?.data?['message'];
+                    if (serverMsg != null && serverMsg.toString().isNotEmpty) {
+                      userMessage = serverMsg.toString().length > 100 
+                          ? '${serverMsg.toString().substring(0, 100)}...' 
+                          : serverMsg.toString();
+                    } else if (statusCode == 401) {
+                      userMessage = 'Invalid credentials. Please check your information.';
+                    } else if (statusCode == 404) {
+                      userMessage = 'Server not found. Please try again later.';
+                    } else if (statusCode != null && statusCode >= 500) {
+                      userMessage = 'Server error. Please try again later.';
+                    } else {
+                      userMessage = 'Request failed. Please try again.';
+                    }
+                  } else {
+                    userMessage = 'Network error. Please check your connection.';
+                  }
+                  setState(() {
+                    errorMsg = userMessage;
+                    isLoading = false;
+                  });
+                } catch (e) {
+                  setState(() {
+                    errorMsg = 'Something went wrong. Please try again.';
+                    isLoading = false;
+                  });
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0FC570),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                elevation: 2,
+              ),
+              child: isLoading
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : Text(isVerified ? 'Update Email' : 'Verify', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(fontSize: 16, color: Colors.black54),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final email = emailController.text.trim();
-              if (email.isEmpty || !email.contains('@')) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please enter a valid email address'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-                return;
-              }
-
-              try {
-                // Show loading indicator
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (context) =>
-                      const Center(child: CircularProgressIndicator()),
-                );
-
-                await FirebaseAuth.instance.sendPasswordResetEmail(
-                  email: email,
-                );
-
-                // Hide loading indicator
-                if (mounted) Navigator.pop(context);
-
-                // Close dialog
-                if (mounted) Navigator.pop(context);
-
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Password reset link sent to $email'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              } on FirebaseAuthException catch (e) {
-                // Hide loading indicator
-                if (mounted) Navigator.pop(context);
-
-                String errorMessage = 'Failed to send reset email';
-                if (e.code == 'user-not-found') {
-                  errorMessage = 'No user found with this email.';
-                } else if (e.code == 'invalid-email') {
-                  errorMessage = 'Invalid email address.';
-                }
-
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(errorMessage),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              } catch (e) {
-                // Hide loading indicator
-                if (mounted) Navigator.pop(context);
-
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('An error occurred'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0FC570),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              elevation: 2,
-            ),
-            child: const Text(
-              'Send Reset Link',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -999,30 +1163,50 @@ class _AuthScreenState extends State<AuthScreen> {
                             const SizedBox(height: 0),
 
                             if (isLogin)
-                              Align(
-                                alignment: Alignment.topLeft,
-                                child: TextButton(
-                                  onPressed: _showForgotPasswordDialog,
-                                  // onPressed: () {},
-                                  style: TextButton.styleFrom(
-                                    padding: EdgeInsets.zero,
-                                    foregroundColor: Colors.green,
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                    overlayColor: Colors.transparent,
-                                  ),
-                                  child: const Text(
-                                    'Forgot Password?',
-                                    style: TextStyle(
-                                      color: Colors.green,
-                                      fontWeight: FontWeight.bold,
-                                      decoration: TextDecoration.underline,
-                                      decorationColor: Colors.green,
-                                      decorationThickness: 2,
-                                      fontSize: 13,
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  TextButton(
+                                    onPressed: _showForgotPasswordDialog,
+                                    style: TextButton.styleFrom(
+                                      padding: EdgeInsets.zero,
+                                      foregroundColor: Colors.green,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      overlayColor: Colors.transparent,
+                                    ),
+                                    child: const Text(
+                                      'Forgot Password?',
+                                      style: TextStyle(
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.bold,
+                                        decoration: TextDecoration.underline,
+                                        decorationColor: Colors.green,
+                                        decorationThickness: 2,
+                                        fontSize: 13,
+                                      ),
                                     ),
                                   ),
-                                ),
+                                  TextButton(
+                                    onPressed: _showForgotEmailDialog,
+                                    style: TextButton.styleFrom(
+                                      padding: EdgeInsets.zero,
+                                      foregroundColor: Colors.green,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      overlayColor: Colors.transparent,
+                                    ),
+                                    child: const Text(
+                                      'Forgot Email?',
+                                      style: TextStyle(
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.bold,
+                                        decoration: TextDecoration.underline,
+                                        decorationColor: Colors.green,
+                                        decorationThickness: 2,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             const SizedBox(height: 10),
 
@@ -1138,6 +1322,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();

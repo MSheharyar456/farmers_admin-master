@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
+import 'package:provider/provider.dart';
 import 'package:farmers_admin/auth/auth_screen.dart';
+import 'package:farmers_admin/models/admin_user.dart';
+import 'package:farmers_admin/services/admin_server_auth_service.dart';
 
 class AppHeader extends StatelessWidget {
   const AppHeader({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final currentUser = FirebaseAuth.instance.currentUser;
+    final authService = Provider.of<AdminServerAuthService>(context);
+    final currentUser = authService.currentUser;
 
     return SafeArea(
       bottom: false,
@@ -116,7 +118,7 @@ class AppHeader extends StatelessWidget {
                 // User profile or Sign in
                 if (currentUser != null)
                   _ProfileArea(
-                    user: currentUser,
+                    adminUser: currentUser,
                     avatarRadius: avatarRadius,
                     showName: showName,
                   )
@@ -139,12 +141,12 @@ class AppHeader extends StatelessWidget {
 }
 
 class _ProfileArea extends StatefulWidget {
-  final User user;
+  final AdminUser adminUser;
   final double avatarRadius;
   final bool showName;
 
   const _ProfileArea({
-    required this.user,
+    required this.adminUser,
     required this.avatarRadius,
     required this.showName,
   });
@@ -156,20 +158,6 @@ class _ProfileArea extends StatefulWidget {
 class _ProfileAreaState extends State<_ProfileArea> {
   double _buttonWidth = 50.0;
   final GlobalKey<PopupMenuButtonState<int>> _menuKey = GlobalKey();
-
-  String _cleanName(String? email, String? displayName) {
-    if (displayName != null && displayName.trim().isNotEmpty) {
-      return displayName;
-    }
-    if (email == null) return "User";
-
-    String name = email.split('@').first;
-    name = name.replaceAll(RegExp(r'[0-9]'), '');
-    if (name.isNotEmpty) {
-      name = name[0].toUpperCase() + name.substring(1);
-    }
-    return name;
-  }
 
   void _updateButtonWidth() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -186,32 +174,13 @@ class _ProfileAreaState extends State<_ProfileArea> {
   void initState() {
     super.initState();
     _updateButtonWidth();
-    _fetchUsername();
   }
 
-
-  String? _dbUsername;
-
-  Future<void> _fetchUsername() async {
-    try {
-      final uid = widget.user.uid;
-      final snap = await FirebaseDatabase.instance.ref('adminUsers/$uid/username').get();
-      if (snap.exists && snap.value != null) {
-        setState(() {
-          _dbUsername = snap.value.toString();
-        });
-      }
-    } catch (_) {
-      // ignore errors, fallback to displayName/email
-    }
-  }
   @override
   Widget build(BuildContext context) {
-  final displayName = _dbUsername ?? _cleanName(widget.user.email, widget.user.displayName);
+    final displayName = widget.adminUser.displayName;
 
-    final avatar = (widget.user.photoURL != null && widget.user.photoURL!.isNotEmpty)
-        ? CircleAvatar(radius: widget.avatarRadius, backgroundImage: NetworkImage(widget.user.photoURL!))
-        : CircleAvatar(
+    final avatar = CircleAvatar(
       radius: widget.avatarRadius,
       backgroundColor: Colors.grey.shade200,
       child: ClipOval(
@@ -241,11 +210,14 @@ class _ProfileAreaState extends State<_ProfileArea> {
           if (value == 1) {
             // Navigate to profile
           } else if (value == 2) {
-            await FirebaseAuth.instance.signOut();
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const AuthScreen()),
-                  (route) => false,
-            );
+            final authService = Provider.of<AdminServerAuthService>(context, listen: false);
+            await authService.signOut();
+            if (context.mounted) {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const AuthScreen()),
+                (route) => false,
+              );
+            }
           }
         },
         itemBuilder: (context) {

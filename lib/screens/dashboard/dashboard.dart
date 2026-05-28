@@ -8,17 +8,20 @@ import 'package:farmers_admin/screens/post_management/edit_post_screen.dart';
 import 'package:farmers_admin/screens/farming_tip/farmingTip.dart';
 import 'package:farmers_admin/screens/post_management/post_management_screen.dart';
 import 'package:farmers_admin/screens/user_management/user_screen.dart';
+import 'package:farmers_admin/screens/user_management/deleted_users_screen.dart';
 import 'package:farmers_admin/screens/working_status/working_status_screen.dart';
+import 'package:farmers_admin/services/admin_post_service.dart';
 import 'package:farmers_admin/user_feedback/user_feedback_screen.dart';
 import 'package:farmers_admin/widgets/delete_dialog.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
-import 'package:firebase_database/firebase_database.dart';
+import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
 import 'package:farmers_admin/services/permission_helper.dart';
+import 'package:farmers_admin/viewmodels/dashboard_viewmodel.dart';
+import 'package:provider/provider.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int initialIndex;
@@ -28,6 +31,7 @@ class DashboardScreen extends StatefulWidget {
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
+
 
 class ContentPage extends StatelessWidget {
   final String title;
@@ -47,7 +51,29 @@ class DashboardContent extends StatefulWidget {
 }
 
 class _DashboardContentState extends State<DashboardContent> {
-  final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
+  List<Post>? _posts;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPosts();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<DashboardViewModel>().loadStats();
+    });
+  }
+
+  Future<void> _loadPosts() async {
+    if (!mounted) return;
+    final service = context.read<AdminPostService>();
+    try {
+      // Always bypass cache to get fresh data
+      final rows = await service.getPosts(limit: 500, approved: 0, bypassCache: true);
+      if (!mounted) return;
+      setState(() => _posts = service.postsFromRows(rows));
+    } catch (_) {
+      if (mounted) setState(() => _posts = []);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -90,116 +116,77 @@ class _DashboardContentState extends State<DashboardContent> {
                   ),
                   const SizedBox(height: 15),
 
-                  // 🔹 Wrap summary cards inside StreamBuilder
-                  StreamBuilder<DatabaseEvent>(
-                    stream: _dbRef.onValue,
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData ||
-                          snapshot.data!.snapshot.value == null) {
+                  // Summary cards from backend stats
+                  Consumer<DashboardViewModel>(
+                    builder: (context, vm, _) {
+                      if (vm.isLoading && vm.stats.totalUsers == 0 && vm.stats.totalPosts == 0) {
                         return const Center(
-                          child: CircularProgressIndicator(color: Colors.green),
+                          child: Padding(
+                            padding: EdgeInsets.all(24.0),
+                            child: CircularProgressIndicator(color: Colors.green),
+                          ),
                         );
                       }
-
-                      final root = Map<String, dynamic>.from(
-                        snapshot.data!.snapshot.value as Map,
-                      );
-
-                      // --- Users ---
-                      int totalUsers = 0;
-                      if (root["usersAuthData"] != null) {
-                        final usersData = Map<String, dynamic>.from(
-                          root["usersAuthData"],
-                        );
-                        totalUsers = usersData.length;
-                      }
-
-                      // --- Posts ---
-                      int totalPosts = 0;
-                      int approvedPosts = 0;
-                      int pendingPosts = 0;
-                      int cancelledPosts = 0;
-                      int soldPosts = 0;
-                      if (root["productsPostData"] != null) {
-                        final postsData = Map<String, dynamic>.from(
-                          root["productsPostData"],
-                        );
-                        totalPosts = postsData.length;
-
-                        postsData.forEach((postId, value) {
-                          final postData = Map<String, dynamic>.from(
-                            value as Map,
-                          );
-                          final post = Post.fromMap(postId, postData);
-
-                          if (post.postIsSold) {
-                            soldPosts++;
-                          }
-                          if (post.postIsCancelled) {
-                            cancelledPosts++;
-                          } else if (post.postIsApproved) {
-                            approvedPosts++;
-                          } else {
-                            pendingPosts++;
-                          }
-                        });
-                      }
-
+                      final stats = vm.stats;
                       final List<Widget> cards = [
                         SummaryCard(
                           title: 'Pending Posts',
-                          value: '$pendingPosts',
+                          value: '${stats.pendingPosts}',
                           percentage: '',
                           isPositive: true,
                           backgroundColor: appColors.cardBackgroundColor!,
                         ),
                         SummaryCard(
                           title: 'Approved Posts',
-                          value: '$approvedPosts',
+                          value: '${stats.approvedPosts}',
                           percentage: '',
                           isPositive: false,
                           backgroundColor: appColors.cardBackgroundColor2!,
                         ),
-
-                        // SummaryCard(
-                        //   title: 'Total Posts',
-                        //   value: '$totalPosts',
-                        //   percentage: '',
-                        //   isPositive: true,
-                        //   backgroundColor: appColors.cardBackgroundColor!,
-                        //
-                        // ),
                         SummaryCard(
                           title: 'Rejected Posts',
-                          value: '$cancelledPosts',
+                          value: '${stats.cancelledPosts}',
                           percentage: '',
                           isPositive: false,
                           backgroundColor: appColors.cardBackgroundColor2!,
                         ),
                         SummaryCard(
                           title: 'Total Users',
-                          value: '$totalUsers',
+                          value: '${stats.totalUsers}',
                           percentage: '',
                           isPositive: false,
                           backgroundColor: appColors.cardBackgroundColor!,
                         ),
                         SummaryCard(
                           title: 'Sold Posts',
-                          value: '$soldPosts',
+                          value: '${stats.soldPosts}',
                           percentage: '',
                           isPositive: true,
                           backgroundColor: appColors.cardBackgroundColor2!,
                         ),
-                        // SummaryCard(
-                        //   title: 'Delete Accounts',
-                        //   value: '0',
-                        //   percentage: '',
-                        //   isPositive: true,
-                        //   backgroundColor: appColors.cardBackgroundColor!,
-                        //
-                        // ),
+                        // Clickable Deleted Users Card
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => const DeletedUsersScreen(),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 8),
+                            child: SummaryCard(
+                              title: 'Deleted Users',
+                              value: '${stats.deletedUsersCount}',
+                              percentage: 'Pending',
+                              isPositive: false,
+                              backgroundColor: stats.deletedUsersCount > 0
+                                  ? Colors.orange[100]!
+                                  : appColors.cardBackgroundColor!,
+                            ),
+                          ),
+                        ),
                       ];
-
                       return LayoutBuilder(
                         builder: (context, constraints) {
                           const double breakpoint = 900.0;
@@ -214,9 +201,7 @@ class _DashboardContentState extends State<DashboardContent> {
                               children: cards.map((card) {
                                 return Expanded(
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 0.0,
-                                    ),
+                                    padding: const EdgeInsets.symmetric(horizontal: 0.0),
                                     child: card,
                                   ),
                                 );
@@ -368,7 +353,7 @@ class RequestsGrid extends StatefulWidget {
 
 class _RequestsGridState extends State<RequestsGrid> {
   late PlutoGridStateManager stateManager;
-  late final List<PlutoColumn> columns;
+  late List<PlutoColumn> columns;
   final double rowHeight = 40;
   final double headerHeight = 50;
 
@@ -384,13 +369,66 @@ class _RequestsGridState extends State<RequestsGrid> {
   String _tempSearchQuery = '';
   String? _tempSelectedCategory;
 
-  // 🔹 Store all pending posts to avoid reloading
+  // 🔹 Store all pending posts (from server)
   final List<Post> _allPendingPosts = [];
   bool _isInitialLoad = true;
+
+  Stream<List<Post>>? _pendingPostsLiveStream;
+
+  Stream<List<Post>> _createPendingPostsLiveStream(BuildContext context) async* {
+    // Emit current list immediately so UI doesn't flash/reload.
+    yield List<Post>.from(_allPendingPosts);
+
+    while (mounted) {
+      await Future<void>.delayed(const Duration(seconds: 5));
+      if (!mounted) return;
+      try {
+        final service = context.read<AdminPostService>();
+        // Always bypass cache to get fresh data (important after approval)
+        final rows = await service.getPosts(limit: 500, approved: 0, bypassCache: true);
+        final list = service.postsFromRows(rows);
+        yield list;
+      } catch (_) {
+        // Ignore transient errors; keep last list.
+      }
+    }
+  }
 
   // Permission states
   bool _canEdit = true;
   bool _canDelete = true;
+
+  Future<void> _loadPendingPosts() async {
+    if (!mounted) return;
+    final service = context.read<AdminPostService>();
+    try {
+      // Always bypass cache to get fresh data
+      final rows = await service.getPosts(limit: 500, approved: 0, bypassCache: true);
+      if (!mounted) return;
+      setState(() {
+        _allPendingPosts.clear();
+        _allPendingPosts.addAll(service.postsFromRows(rows));
+        _isInitialLoad = false;
+      });
+      if (_isGridLoaded) _updatePlutoGridRows();
+    } catch (_) {
+      if (mounted) setState(() => _isInitialLoad = false);
+    }
+  }
+
+  void _removePendingPostLocally(String postId) {
+    if (postId.isEmpty) return;
+    final before = _allPendingPosts.length;
+    _allPendingPosts.removeWhere((p) => p.postId == postId);
+    if (_allPendingPosts.length == before) return;
+
+    // If current page is now out of range (e.g. removed last item on last page), shift back.
+    final pages = totalPages;
+    if (pages > 0 && _currentPage > pages) {
+      _currentPage = pages;
+    }
+    if (_isGridLoaded) _updatePlutoGridRows();
+  }
 
   // 🔹 Category mapping
   final Map<String, String> _categoryMapping = {
@@ -424,7 +462,7 @@ class _RequestsGridState extends State<RequestsGrid> {
     return filtered;
   }
 
-  int get totalPages => (_filteredPosts.length / _rowsPerPage).ceil();
+  int get totalPages => _filteredPosts.isEmpty ? 0 : (_filteredPosts.length / _rowsPerPage).ceil();
 
   List<Post> get _paginatedPosts {
     final startIndex = (_currentPage - 1) * _rowsPerPage;
@@ -442,6 +480,13 @@ class _RequestsGridState extends State<RequestsGrid> {
     _tempSelectedCategory = "All";
     _loadPermissions();
     _initColumns();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPendingPosts());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _pendingPostsLiveStream ??= _createPendingPostsLiveStream(context).asBroadcastStream();
   }
 
   Future<void> _loadPermissions() async {
@@ -573,9 +618,9 @@ class _RequestsGridState extends State<RequestsGrid> {
                     ),
                     tooltip: 'Edit Post',
                     splashRadius: 20,
-                    onPressed: () {
+                    onPressed: () async {
                       if (postData != null && postData is Post) {
-                        Navigator.push(
+                        final result = await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => EditPostScreen(
@@ -584,6 +629,12 @@ class _RequestsGridState extends State<RequestsGrid> {
                             ),
                           ),
                         );
+                        // Edit screen sometimes returns 'success' and sometimes returns true.
+                        if ((result == 'success' || result == true) && mounted) {
+                          _removePendingPostLocally(postId?.toString() ?? '');
+                          // Also refresh from server immediately to ensure consistency
+                          _loadPendingPosts();
+                        }
                       }
                     },
                   ),
@@ -620,9 +671,8 @@ class _RequestsGridState extends State<RequestsGrid> {
                         message:
                             "Are you sure you want to delete this pending request?",
                         onConfirm: () async {
-                          await FirebaseDatabase.instance
-                              .ref('productsPostData/$postId')
-                              .remove();
+                          await context.read<AdminPostService>().deletePost(postId as String);
+                          if (mounted) _loadPendingPosts();
                         },
                       );
                     },
@@ -995,71 +1045,43 @@ class _RequestsGridState extends State<RequestsGrid> {
         final isMobile = screenWidth < 768;
         final isTablet = screenWidth >= 768 && screenWidth < 1024;
 
-        return StreamBuilder<DatabaseEvent>(
-          stream: FirebaseDatabase.instance.ref('productsPostData').onValue,
-          builder: (context, snapshot) {
-            if (_isInitialLoad &&
-                snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(color: Colors.green),
-              );
-            }
+        if (_isInitialLoad) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.green),
+          );
+        }
 
-            if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Image.asset(
-                      'images/image_farm_nothing_remains.png',
-                      height: 150,
-                    ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      "No pending requests available",
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      "Pending requests will appear here",
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+        if (_allPendingPosts.isEmpty && _filteredPosts.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Image.asset(
+                  'images/image_farm_nothing_remains.png',
+                  height: 150,
                 ),
-              );
-            }
+                const SizedBox(height: 24),
+                const Text(
+                  "No pending requests available",
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  "Pending requests will appear here",
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        }
 
-            final data = snapshot.data!.snapshot.value as Map;
-            final postsData = Map<String, dynamic>.from(data);
-
-            _allPendingPosts.clear();
-            postsData.forEach((postId, value) {
-              final postMap = Map<dynamic, dynamic>.from(value as Map);
-              final post = Post.fromMap(postId, postMap);
-              // Show posts that are not approved (pending) or cancelled (rejected)
-              if (!post.postIsApproved || post.postIsCancelled) {
-                _allPendingPosts.add(post);
-              }
-            });
-
-            if (_isInitialLoad) {
-              _isInitialLoad = false;
-            } else if (_isGridLoaded) {
-              // Refresh grid rows when stream data changes and grid is already loaded
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted && _isGridLoaded) {
-                  _updatePlutoGridRows();
-                }
-              });
-            }
-
-            if (_filteredPosts.isEmpty) {
+        if (_filteredPosts.isEmpty) {
               return Column(
                 children: [
                   // Show filters even when no results
@@ -1130,16 +1152,65 @@ class _RequestsGridState extends State<RequestsGrid> {
                 // Grid
                 SizedBox(
                   height: gridHeight,
-                  child: isSmallScreen
-                      ? SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: SizedBox(
-                            width: columns.fold<double>(
-                              0,
-                              (sum, col) =>
-                                  sum + (col.width ?? col.minWidth ?? 120),
-                            ),
-                            child: PlutoGrid(
+                  child: StreamBuilder<List<Post>>(
+                    stream: _pendingPostsLiveStream,
+                    initialData: List<Post>.from(_allPendingPosts),
+                    builder: (context, snapshot) {
+                      final latest = snapshot.data;
+                      if (latest != null) {
+                        // Update in-memory list and redraw grid without a "reload" experience.
+                        _allPendingPosts
+                          ..clear()
+                          ..addAll(latest);
+                        _isInitialLoad = false;
+                        if (_isGridLoaded) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) _updatePlutoGridRows();
+                          });
+                        }
+                      }
+
+                      return isSmallScreen
+                          ? SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: SizedBox(
+                                width: columns.fold<double>(
+                                  0,
+                                  (sum, col) =>
+                                      sum + (col.width ?? col.minWidth ?? 120),
+                                ),
+                                child: PlutoGrid(
+                                  columns: columns,
+                                  rows: [],
+                                  onLoaded: (event) {
+                                    stateManager = event.stateManager;
+                                    setState(() => _isGridLoaded = true);
+                                    _updatePlutoGridRows();
+                                  },
+                                  configuration: PlutoGridConfiguration(
+                                    columnSize: const PlutoGridColumnSizeConfig(
+                                      autoSizeMode: PlutoAutoSizeMode.none,
+                                    ),
+                                    style: PlutoGridStyleConfig(
+                                      rowHeight: 40,
+                                      columnTextStyle: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                      cellTextStyle:
+                                          const TextStyle(fontSize: 12),
+                                      enableColumnBorderHorizontal: true,
+                                      enableCellBorderHorizontal: true,
+                                      enableColumnBorderVertical: true,
+                                      enableRowColorAnimation: false,
+                                      oddRowColor: Colors.white,
+                                      evenRowColor: Colors.grey.shade50,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            )
+                          : PlutoGrid(
                               columns: columns,
                               rows: [],
                               onLoaded: (event) {
@@ -1149,7 +1220,7 @@ class _RequestsGridState extends State<RequestsGrid> {
                               },
                               configuration: PlutoGridConfiguration(
                                 columnSize: const PlutoGridColumnSizeConfig(
-                                  autoSizeMode: PlutoAutoSizeMode.none,
+                                  autoSizeMode: PlutoAutoSizeMode.scale,
                                 ),
                                 style: PlutoGridStyleConfig(
                                   rowHeight: 40,
@@ -1157,7 +1228,8 @@ class _RequestsGridState extends State<RequestsGrid> {
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12,
                                   ),
-                                  cellTextStyle: const TextStyle(fontSize: 12),
+                                  cellTextStyle:
+                                      const TextStyle(fontSize: 12),
                                   enableColumnBorderHorizontal: true,
                                   enableCellBorderHorizontal: true,
                                   enableColumnBorderVertical: true,
@@ -1166,37 +1238,9 @@ class _RequestsGridState extends State<RequestsGrid> {
                                   evenRowColor: Colors.grey.shade50,
                                 ),
                               ),
-                            ),
-                          ),
-                        )
-                      : PlutoGrid(
-                          columns: columns,
-                          rows: [],
-                          onLoaded: (event) {
-                            stateManager = event.stateManager;
-                            setState(() => _isGridLoaded = true);
-                            _updatePlutoGridRows();
-                          },
-                          configuration: PlutoGridConfiguration(
-                            columnSize: const PlutoGridColumnSizeConfig(
-                              autoSizeMode: PlutoAutoSizeMode.scale,
-                            ),
-                            style: PlutoGridStyleConfig(
-                              rowHeight: 40,
-                              columnTextStyle: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                              cellTextStyle: const TextStyle(fontSize: 12),
-                              enableColumnBorderHorizontal: true,
-                              enableCellBorderHorizontal: true,
-                              enableColumnBorderVertical: true,
-                              enableRowColorAnimation: false,
-                              oddRowColor: Colors.white,
-                              evenRowColor: Colors.grey.shade50,
-                            ),
-                          ),
-                        ),
+                            );
+                    },
+                  ),
                 ),
 
                 const SizedBox(height: 10),
@@ -1479,8 +1523,6 @@ class _RequestsGridState extends State<RequestsGrid> {
                 ),
               ],
             );
-          },
-        );
       },
     );
   }

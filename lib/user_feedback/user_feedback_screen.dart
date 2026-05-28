@@ -1,9 +1,11 @@
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
+import 'package:farmers_admin/models/users_feedback_model.dart';
+import 'package:farmers_admin/services/admin_dashboard_api_service.dart';
 import 'package:farmers_admin/widgets/delete_dialog.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 
@@ -34,6 +36,8 @@ class FeebbackContent extends StatefulWidget {
 
 class _FeebbackContentState extends State<FeebbackContent> {
   late PlutoGridStateManager stateManager;
+  List<FeedbackModel> _feedbackList = [];
+  bool _loading = true;
   String _searchQuery = '';
   String? _selectedType;
   String _pendingSearchQuery = '';
@@ -44,6 +48,51 @@ class _FeebbackContentState extends State<FeebbackContent> {
   final double rowHeight = 40;
   final double headerHeight = 50;
   Map<String, String> userNameCache = {};
+
+  Future<void> _loadFeedback() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+    try {
+      final service = context.read<AdminDashboardApiService>();
+      final list = await service.getFeedback(limit: 200);
+      if (mounted) setState(() {
+        _feedbackList = list;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() {
+        _feedbackList = [];
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFeedback();
+  }
+
+  List<PlutoRow> _buildRowsFromList() {
+    final filtered = _feedbackList.where((f) => _matchesFilters(f.toMap())).toList();
+    filtered.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    int counter = 1;
+    return filtered.map((f) {
+      final feedback = f.toMap();
+      return PlutoRow(
+        cells: {
+          'no': PlutoCell(value: counter++),
+          'userName': PlutoCell(value: f.userName),
+          'message': PlutoCell(value: f.message),
+          'type': PlutoCell(value: f.type),
+          'rating': PlutoCell(value: f.rating),
+          'date': PlutoCell(value: f.formattedDate),
+          'actions': PlutoCell(value: ''),
+          'feedbackData': PlutoCell(value: feedback),
+        },
+      );
+    }).toList();
+  }
 
   List<PlutoColumn> _getColumns(BuildContext context, bool isMobile) {
     return [
@@ -136,6 +185,27 @@ class _FeebbackContentState extends State<FeebbackContent> {
         ),
       if (!isMobile)
         PlutoColumn(
+          title: 'Rating',
+          field: 'rating',
+          type: PlutoColumnType.number(),
+          width: 80,
+          enableEditingMode: false,
+          renderer: (rendererContext) {
+            final rating = rendererContext.cell.value as int?;
+            if (rating == null || rating <= 0) {
+              return const Text('-', style: TextStyle(color: Colors.grey, fontSize: 12));
+            }
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(
+                rating,
+                (i) => const Icon(Icons.star, size: 14, color: Colors.amber),
+              ),
+            );
+          },
+        ),
+      if (!isMobile)
+        PlutoColumn(
           title: 'Date',
           field: 'date',
           type: PlutoColumnType.text(),
@@ -187,48 +257,37 @@ class _FeebbackContentState extends State<FeebbackContent> {
                   },
                 ),
               ),
-              // if (!isMobile) const SizedBox(width: 8),
-              // if (!isMobile)
-              //   Container(
-              //     height: 30,
-              //     width: 30,
-              //     decoration: BoxDecoration(
-              //       color: Colors.red.shade50,
-              //       borderRadius: BorderRadius.circular(8),
-              //     ),
-              //     child: IconButton(
-              //       padding: EdgeInsets.zero,
-              //       icon: SvgPicture.asset(
-              //         'images/ic_farm_trash.svg',
-              //         width: 18,
-              //         height: 18,
-              //         color: Colors.red,
-              //       ),
-              //       tooltip: 'Delete Feedback',
-              //       splashRadius: 20,
-              //       onPressed: () async {
-              //         if (feedbackMap != null && feedbackMap is Map) {
-              //           final String feedbackId = feedbackMap['id'];
-              //
-              //           await showDeleteDialog(
-              //             context: context,
-              //             title: "Delete Feedback",
-              //             message: "Are you sure you want to delete this feedback?",
-              //             onConfirm: () async {
-              //               await FirebaseDatabase.instance.ref('userFeedback/$feedbackId').remove();
-              //               if (!context.mounted) return;
-              //
-              //               // optional: trigger a UI refresh
-              //               setState(() {});
-              //
-              //               // (no need for another snackbar because your showDeleteDialog already shows one)
-              //             },
-              //           );
-              //         }
-              //       },
-              //
-              //     ),
-              //   ),
+              if (feedbackMap != null && feedbackMap is Map)
+                Container(
+                  height: 20,
+                  width: 20,
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.delete_outline, size: 12, color: Colors.red),
+                    tooltip: 'Delete Feedback',
+                    splashRadius: 20,
+                    onPressed: () async {
+                      final String? feedbackId = (feedbackMap as Map)['id']?.toString();
+                      if (feedbackId == null) return;
+                      await showDeleteDialog(
+                        context: context,
+                        title: 'Delete Feedback',
+                        message: 'Are you sure you want to delete this feedback?',
+                        onConfirm: () async {
+                          try {
+                            await context.read<AdminDashboardApiService>().deleteFeedback(feedbackId);
+                            if (!context.mounted) return;
+                            _loadFeedback();
+                          } catch (_) {}
+                        },
+                      );
+                    },
+                  ),
+                ),
             ],
           );
         },
@@ -247,24 +306,8 @@ class _FeebbackContentState extends State<FeebbackContent> {
     // Fetch user auth data
     String userName = feedbackData['userName'] ?? 'Unknown User';
     String userEmail = feedbackData['userMail'] ?? 'No email';
-    String userContact = feedbackData['userContact'] ?? 'No contact';
-    bool userIsVerified = false;
-
-    final userId = feedbackData['userId'] ?? '';
-    if (userId.isNotEmpty) {
-      try {
-        final userSnapshot = await FirebaseDatabase.instance
-            .ref('usersAuthData/$userId')
-            .get();
-
-        if (userSnapshot.exists) {
-          final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
-          userIsVerified = userData['userIsVerified'] ?? false;
-        }
-      } catch (e) {
-        print('Error fetching user auth data: $e');
-      }
-    }
+    String userContact = feedbackData['userContact']?.toString() ?? 'No contact';
+    const bool userIsVerified = false;
 
     if (!mounted) return;
 
@@ -370,6 +413,10 @@ class _FeebbackContentState extends State<FeebbackContent> {
                       ),
                       const Divider(thickness: 1, color: Colors.grey),
 
+                      // Rating
+                      _buildRatingRow(feedbackData['rating'] as int?),
+                      const Divider(thickness: 1, color: Colors.grey),
+
                       const SizedBox(height: 16),
 
                       // Description/Message
@@ -452,26 +499,44 @@ class _FeebbackContentState extends State<FeebbackContent> {
     );
   }
 
-  Future<String> _getUserName(String userId) async {
-    if (userNameCache.containsKey(userId)) {
-      return userNameCache[userId]!;
-    }
-    try {
-      final snapshot = await FirebaseDatabase.instance
-          .ref('usersAuthData/$userId/userName')
-          .get();
-
-      if (snapshot.exists) {
-        final userName = snapshot.value.toString();
-        userNameCache[userId] = userName;
-        return userName;
-      }
-    } catch (e) {
-      print('Error fetching user name: $e');
-    }
-
-    userNameCache[userId] = 'Unknown User';
-    return 'Unknown User';
+  Widget _buildRatingRow(int? rating) {
+    return SizedBox(
+      width: double.infinity,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const SizedBox(
+            width: 120,
+            child: Text(
+              'Rating',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: rating != null && rating > 0
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(
+                        rating,
+                        (i) => const Icon(Icons.star, size: 16, color: Colors.amber),
+                      ),
+                    )
+                  : const Text(
+                      'No rating',
+                      style: TextStyle(fontSize: 12, color: Color(0xFFADB5BD)),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   bool _matchesFilters(Map<String, dynamic> feedbackData) {
@@ -848,25 +913,20 @@ class _FeebbackContentState extends State<FeebbackContent> {
                           ),
                     const SizedBox(height: 10),
                     // PlutoGrid Section
-                    StreamBuilder<DatabaseEvent>(
-                      stream: FirebaseDatabase.instance
-                          .ref('userFeedback')
-                          .onValue,
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
+                    Builder(
+                      builder: (context) {
+                        if (_loading) {
                           return const SizedBox(
                             height: 400,
                             child: Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.green,
-                              ),
+                              child: CircularProgressIndicator(color: Colors.green),
                             ),
                           );
                         }
 
-                        if (!snapshot.hasData ||
-                            snapshot.data!.snapshot.value == null) {
+                        final rows = _buildRowsFromList();
+
+                        if (rows.isEmpty) {
                           return Container(
                             decoration: BoxDecoration(
                               color: Colors.white,
@@ -883,7 +943,9 @@ class _FeebbackContentState extends State<FeebbackContent> {
                                   ),
                                   const SizedBox(height: 24),
                                   Text(
-                                    "No feedback available",
+                                    _feedbackList.isEmpty
+                                        ? "No feedback available"
+                                        : "You're all caught up!",
                                     style: TextStyle(
                                       fontSize: isMobile ? 18 : 22,
                                       fontWeight: FontWeight.bold,
@@ -891,12 +953,11 @@ class _FeebbackContentState extends State<FeebbackContent> {
                                     ),
                                   ),
                                   const SizedBox(height: 8),
-                                  const Text(
-                                    'Feedback from users will appear here',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey,
-                                    ),
+                                  Text(
+                                    _feedbackList.isEmpty
+                                        ? 'Feedback from users will appear here'
+                                        : 'No feedback found matching your filters',
+                                    style: const TextStyle(fontSize: 14, color: Colors.grey),
                                   ),
                                 ],
                               ),
@@ -904,67 +965,8 @@ class _FeebbackContentState extends State<FeebbackContent> {
                           );
                         }
 
-                        final data = snapshot.data!.snapshot.value as Map;
-                        final feedbackData = Map<String, dynamic>.from(data);
-
-                        return FutureBuilder<List<PlutoRow>>(
-                          future: _buildFeedbackRows(feedbackData),
-                          builder: (context, rowSnapshot) {
-                            if (rowSnapshot.connectionState ==
-                                ConnectionState.waiting) {
-                              return const SizedBox(
-                                height: 400,
-                                child: Center(
-                                  child: CircularProgressIndicator(
-                                    color: Colors.green,
-                                  ),
-                                ),
-                              );
-                            }
-
-                            final rows = rowSnapshot.data ?? [];
-
-                            if (rows.isEmpty) {
-                              return Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                height: 400,
-                                child: Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Image.asset(
-                                        'images/image_farm_nothing_remains.png',
-                                        height: 150,
-                                      ),
-                                      const SizedBox(height: 24),
-                                      const Text(
-                                        "You're all caught up!",
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.black87,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      const Text(
-                                        "No feedback found matching your filters",
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.black87,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            }
-
-                            // Pagination logic
-                            int totalRows = rows.length;
+                        // Pagination logic
+                        int totalRows = rows.length;
                             int totalPages = (totalRows / _rowsPerPage).ceil();
                             int startIndex = (_currentPage - 1) * _rowsPerPage;
                             int endIndex = startIndex + _rowsPerPage;
@@ -1353,8 +1355,6 @@ class _FeebbackContentState extends State<FeebbackContent> {
                                 ),
                               ],
                             );
-                          },
-                        );
                       },
                     ),
                   ],
@@ -1365,70 +1365,6 @@ class _FeebbackContentState extends State<FeebbackContent> {
         ],
       ),
     );
-  }
-
-  Future<List<PlutoRow>> _buildFeedbackRows(
-    Map<String, dynamic> feedbackData,
-  ) async {
-    final List<PlutoRow> rows = [];
-    int counter = 1;
-
-    final List<MapEntry<String, dynamic>> feedbackEntries = feedbackData.entries
-        .toList();
-
-    // Sort by timestamp (newest first)
-    feedbackEntries.sort((a, b) {
-      try {
-        final timestampA =
-            (a.value as Map)['timestamp'] as int? ??
-            DateTime.now()
-                .millisecondsSinceEpoch; // Fallback to current time if null
-        final timestampB =
-            (b.value as Map)['timestamp'] as int? ??
-            DateTime.now()
-                .millisecondsSinceEpoch; // Fallback to current time if null
-        return timestampB.compareTo(
-          timestampA,
-        ); // Newest first (descending order)
-      } catch (e) {
-        print('Error sorting feedback: $e');
-        return 0; // Keep original order if there's an error
-      }
-    });
-
-    for (final entry in feedbackEntries) {
-      final feedbackId = entry.key;
-      final feedback = Map<String, dynamic>.from(entry.value as Map);
-      feedback['id'] = feedbackId;
-
-      final userId = feedback['userId'] ?? '';
-      //final userName = await _getUserName(userId);
-
-      final timestamp = feedback['timestamp'] as int? ?? 0;
-      final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
-      final formattedDate =
-          "${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}";
-      feedback['formattedDate'] = formattedDate;
-
-      if (_matchesFilters(feedback)) {
-        rows.add(
-          PlutoRow(
-            cells: {
-              'no': PlutoCell(value: counter),
-              'userName': PlutoCell(value: feedback['userName']),
-              'message': PlutoCell(value: feedback['message'] ?? ''),
-              'type': PlutoCell(value: feedback['type'] ?? 'General'),
-              'date': PlutoCell(value: formattedDate),
-              'actions': PlutoCell(value: ''),
-              'feedbackData': PlutoCell(value: feedback),
-            },
-          ),
-        );
-        counter++;
-      }
-    }
-
-    return rows;
   }
 
   @override

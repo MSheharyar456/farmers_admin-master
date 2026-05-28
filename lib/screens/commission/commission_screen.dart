@@ -1,11 +1,13 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/commission_model.dart';
-import 'package:farmers_admin/repositories/commission_repository.dart';
+import 'package:farmers_admin/services/commission_service.dart';
+import 'package:farmers_admin/utils/localization_helper.dart';
 import 'package:farmers_admin/widgets/delete_dialog.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
@@ -54,10 +56,55 @@ class _CommissionContentState extends State<CommissionContent> {
   // Permission states
   bool _canDelete = true;
 
+  // API Service and data
+  final CommissionService _commissionService = CommissionService();
+  List<CommissionModel> _allCommissions = [];
+  bool _isLoading = true;
+  String? _errorMessage;
+  Timer? _pollingTimer;
+
   @override
   void initState() {
     super.initState();
     _loadPermissions();
+    _loadCommissions();
+    // Start polling every 30 seconds for new data
+    _pollingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) _loadCommissions();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pollingTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadCommissions() async {
+    if (!mounted) return;
+    if (_isInitialLoad) {
+      setState(() => _isLoading = true);
+    }
+
+    try {
+      final commissions = await _commissionService.getAllCommissions();
+      if (mounted) {
+        setState(() {
+          _allCommissions = commissions;
+          _isLoading = false;
+          _isInitialLoad = false;
+          _errorMessage = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isInitialLoad = false;
+          _errorMessage = 'Failed to load commissions: $e';
+        });
+      }
+    }
   }
 
   Future<void> _loadPermissions() async {
@@ -79,14 +126,14 @@ class _CommissionContentState extends State<CommissionContent> {
   List<PlutoColumn> _getColumns(BuildContext context, bool isMobile) {
     return [
       PlutoColumn(
-        title: 'No',
+        title: AppLocalizations.translate('No'),
         field: 'no',
         type: PlutoColumnType.number(),
         width: isMobile ? 50 : 60,
         enableEditingMode: false,
       ),
       PlutoColumn(
-        title: 'Name',
+        title: AppLocalizations.translate('Name'),
         field: 'name',
         type: PlutoColumnType.text(),
         width: isMobile ? 100 : 150,
@@ -94,21 +141,46 @@ class _CommissionContentState extends State<CommissionContent> {
       ),
       if (!isMobile)
         PlutoColumn(
-          title: 'Phone',
+          title: AppLocalizations.translate('Phone'),
           field: 'phone',
           type: PlutoColumnType.text(),
           width: 130,
           enableEditingMode: false,
+          renderer: (ctx) {
+            String phone = ctx.cell.value.toString();
+            // Extract only digits
+            String digits = phone.replaceAll(RegExp(r'[^\d]'), '');
+            // Rebuild with + at start
+            String fixedPhone = digits.isNotEmpty ? '+$digits' : phone;
+            // Use Directionality widget to force LTR
+            return Directionality(
+              textDirection: TextDirection.ltr,
+              child: Text(
+                fixedPhone,
+                style: const TextStyle(fontSize: 12),
+              ),
+            );
+          },
         ),
       PlutoColumn(
-        title: 'Bank',
+        title: AppLocalizations.translate('Bank'),
         field: 'bank',
         type: PlutoColumnType.text(),
         width: isMobile ? 100 : 150,
         enableEditingMode: false,
+        renderer: (ctx) {
+          final bank = ctx.cell.value.toString();
+          return Directionality(
+            textDirection: TextDirection.ltr,
+            child: Text(
+              bank,
+              style: const TextStyle(fontSize: 12),
+            ),
+          );
+        },
       ),
       PlutoColumn(
-        title: 'Amount',
+        title: AppLocalizations.translate('Commission Amount'),
         field: 'commissionAmount',
         type: PlutoColumnType.text(),
         width: isMobile ? 100 : 120,
@@ -116,7 +188,7 @@ class _CommissionContentState extends State<CommissionContent> {
       ),
       if (!isMobile)
         PlutoColumn(
-          title: 'Post Code',
+          title: AppLocalizations.translate('Post Code'),
           field: 'postCode',
           type: PlutoColumnType.text(),
           width: 120,
@@ -124,14 +196,14 @@ class _CommissionContentState extends State<CommissionContent> {
         ),
       if (!isMobile)
         PlutoColumn(
-          title: 'Request Date',
+          title: AppLocalizations.translate('Request Date'),
           field: 'requestDate',
           type: PlutoColumnType.text(),
           width: 150,
           enableEditingMode: false,
         ),
       PlutoColumn(
-        title: 'Actions',
+        title: AppLocalizations.translate('Actions'),
         field: 'actions',
         type: PlutoColumnType.text(),
         width: isMobile ? 100 : 120,
@@ -217,9 +289,11 @@ class _CommissionContentState extends State<CommissionContent> {
                           message:
                               "Are you sure you want to delete this commission?",
                           onConfirm: () async {
-                            await CommissionRepository().deleteCommission(
+                            await _commissionService.deleteCommission(
                               commissionData.itemId,
                             );
+                            // Refresh the list after delete
+                            await _loadCommissions();
                           },
                         );
                       }
@@ -320,9 +394,9 @@ class _CommissionContentState extends State<CommissionContent> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      const Text(
-                        'Commission Details',
-                        style: TextStyle(
+                      Text(
+                        AppLocalizations.translate('Commission Details'),
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                           color: Colors.black87,
@@ -340,33 +414,33 @@ class _CommissionContentState extends State<CommissionContent> {
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     children: [
-                      _buildDetailRow('Name', commission.name),
+                      _buildDetailRow(AppLocalizations.translate('Name'), commission.name),
                       const Divider(thickness: 0.5, color: Colors.grey),
                       const SizedBox(height: 12),
-                      _buildDetailRow('Phone', commission.phone),
+                      _buildDetailRow(AppLocalizations.translate('Phone'), AppLocalizations.fixPhoneNumber(commission.phone)),
                       const Divider(thickness: 0.5, color: Colors.grey),
                       const SizedBox(height: 12),
-                      _buildDetailRow('Bank', commission.bank),
+                      _buildDetailRow(AppLocalizations.translate('Bank'), AppLocalizations.translateBank(commission.bank)),
                       const Divider(thickness: 0.5, color: Colors.grey),
                       const SizedBox(height: 12),
                       _buildDetailRow(
-                        'Commission Amount',
+                        AppLocalizations.translate('Commission Amount'),
                         commission.commissionAmount,
                       ),
                       const Divider(thickness: 0.5, color: Colors.grey),
                       const SizedBox(height: 12),
-                      _buildDetailRow('Post Code', commission.postCode),
+                      _buildDetailRow(AppLocalizations.translate('Post Code'), commission.postCode),
                       const Divider(thickness: 0.5, color: Colors.grey),
                       const SizedBox(height: 12),
-                      _buildDetailRow('Request Date', commission.formattedDate),
+                      _buildDetailRow(AppLocalizations.translate('Request Date'), commission.formattedDate),
                       const Divider(thickness: 0.5, color: Colors.grey),
                       const SizedBox(height: 12),
                       if (commission.notes.isNotEmpty) ...[
-                        const Align(
-                          alignment: Alignment.centerLeft,
+                        Align(
+                          alignment: AppLocalizations.isRtl ? Alignment.centerRight : Alignment.centerLeft,
                           child: Text(
-                            'Notes',
-                            style: TextStyle(
+                            AppLocalizations.translate('Notes'),
+                            style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                               color: Colors.black87,
@@ -404,30 +478,45 @@ class _CommissionContentState extends State<CommissionContent> {
   }
 
   Widget _buildDetailRow(String label, String value) {
+    final isRtl = AppLocalizations.isRtl;
     return SizedBox(
       width: double.infinity,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment: isRtl ? MainAxisAlignment.end : MainAxisAlignment.spaceBetween,
         children: [
-          SizedBox(
-            width: 140,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.normal,
-                fontSize: 12,
-                color: Colors.black87,
+          if (!isRtl)
+            SizedBox(
+              width: 140,
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.normal,
+                  fontSize: 12,
+                  color: Colors.black87,
+                ),
               ),
             ),
-          ),
           Expanded(
             child: Text(
               value,
-              textAlign: TextAlign.right,
+              textAlign: isRtl ? TextAlign.left : TextAlign.right,
               style: const TextStyle(fontSize: 12, color: Color(0xFFADB5BD)),
             ),
           ),
+          if (isRtl)
+            SizedBox(
+              width: 140,
+              child: Text(
+                label,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontWeight: FontWeight.normal,
+                  fontSize: 12,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -504,7 +593,7 @@ class _CommissionContentState extends State<CommissionContent> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Commission Data',
+                                AppLocalizations.translate('Commission Data'),
                                 style: Theme.of(context).textTheme.headlineLarge
                                     ?.copyWith(
                                       color: Colors.black,
@@ -513,7 +602,7 @@ class _CommissionContentState extends State<CommissionContent> {
                               ),
                               const SizedBox(height: 5),
                               Text(
-                                'Dashboard / Commission Data',
+                                AppLocalizations.translate('Dashboard / Commission Data'),
                                 style: Theme.of(context).textTheme.titleSmall
                                     ?.copyWith(
                                       color: Colors.grey,
@@ -534,7 +623,7 @@ class _CommissionContentState extends State<CommissionContent> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Commission Data',
+                                      AppLocalizations.translate('Commission Data'),
                                       style: Theme.of(context)
                                           .textTheme
                                           .headlineLarge
@@ -545,7 +634,7 @@ class _CommissionContentState extends State<CommissionContent> {
                                     ),
                                     const SizedBox(height: 5),
                                     Text(
-                                      'Dashboard / Commission Data',
+                                      AppLocalizations.translate('Dashboard / Commission Data'),
                                       style: Theme.of(context)
                                           .textTheme
                                           .titleSmall
@@ -570,7 +659,7 @@ class _CommissionContentState extends State<CommissionContent> {
                               TextField(
                                 decoration: InputDecoration(
                                   hintText:
-                                      'Search by name, phone, or post code...',
+                                      AppLocalizations.translate('Search by name, phone, or post code...'),
                                   prefixIcon: const Icon(Icons.search),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
@@ -594,63 +683,29 @@ class _CommissionContentState extends State<CommissionContent> {
                                 },
                               ),
                               const SizedBox(height: 12),
-                              StreamBuilder<DatabaseEvent>(
-                                stream: FirebaseDatabase.instance
-                                    .ref('commissionsData')
-                                    .onValue,
-                                builder: (context, bankSnapshot) {
-                                  final List<String> banksList = [];
-                                  if (bankSnapshot.hasData &&
-                                      bankSnapshot.data!.snapshot.value !=
-                                          null) {
-                                    final data =
-                                        bankSnapshot.data!.snapshot.value
-                                            as Map;
-                                    final commissionsData =
-                                        Map<String, dynamic>.from(data);
-                                    // Use Map to store normalized -> original mapping for case-insensitive deduplication
-                                    final Map<String, String> bankMap = {};
-                                    commissionsData.forEach((key, value) {
-                                      try {
-                                        final commission =
-                                            CommissionModel.fromMap(
-                                              key,
-                                              Map<String, dynamic>.from(
-                                                value as Map,
-                                              ),
-                                            );
-                                        // Normalize bank name: trim and normalize whitespace
-                                        final bankName = commission.bank
-                                            .trim()
-                                            .replaceAll(RegExp(r'\s+'), ' ');
-                                        if (bankName.isNotEmpty) {
-                                          // Use normalized key for case-insensitive deduplication
-                                          final normalizedKey =
-                                              _normalizeBankName(bankName);
-                                          // Keep the first occurrence (original case from database)
-                                          if (!bankMap.containsKey(
-                                            normalizedKey,
-                                          )) {
-                                            bankMap[normalizedKey] = bankName;
-                                          }
-                                        }
-                                      } catch (e) {
-                                        // Ignore errors
+                              Builder(
+                                builder: (context) {
+                                  // Get unique banks from loaded commissions
+                                  final Map<String, String> bankMap = {};
+                                  for (final commission in _allCommissions) {
+                                    final bankName = commission.bank
+                                        .trim()
+                                        .replaceAll(RegExp(r'\s+'), ' ');
+                                    if (bankName.isNotEmpty) {
+                                      final normalizedKey = _normalizeBankName(bankName);
+                                      if (!bankMap.containsKey(normalizedKey)) {
+                                        bankMap[normalizedKey] = bankName;
                                       }
-                                    });
-                                    banksList.addAll(
-                                      bankMap.values.toList()..sort(),
-                                    );
+                                    }
                                   }
+                                  final List<String> banksList = bankMap.values.toList()..sort();
 
                                   // Find matching bank from banksList using case-insensitive comparison
-                                  // Use _selectedBank (input value) for dropdown display
                                   String? effectiveSelectedBank;
                                   if (_selectedBank != null &&
                                       _selectedBank!.isNotEmpty) {
                                     final normalizedSelected =
                                         _normalizeBankName(_selectedBank!);
-                                    // Find the bank from banksList that matches (case-insensitive)
                                     try {
                                       effectiveSelectedBank = banksList
                                           .firstWhere(
@@ -683,11 +738,11 @@ class _CommissionContentState extends State<CommissionContent> {
                                                   vertical: 10,
                                                 ),
                                           ),
-                                          hint: const Text('Bank'),
+                                          hint: Text(AppLocalizations.translate('Bank')),
                                           items: [
-                                            const DropdownMenuItem<String?>(
+                                            DropdownMenuItem<String?>(
                                               value: null,
-                                              child: Text('All Banks'),
+                                              child: Text(AppLocalizations.translate('All Banks')),
                                             ),
                                             ...banksList.map(
                                               (bank) =>
@@ -777,48 +832,19 @@ class _CommissionContentState extends State<CommissionContent> {
                                 flex: 1,
                                 child: SizedBox(
                                   height: 38,
-                                  child: StreamBuilder<DatabaseEvent>(
-                                    stream: FirebaseDatabase.instance
-                                        .ref('commissionsData')
-                                        .onValue,
-                                    builder: (context, bankSnapshot) {
-                                      final List<String> banksList = [];
-                                      if (bankSnapshot.hasData &&
-                                          bankSnapshot.data!.snapshot.value !=
-                                              null) {
-                                        final data =
-                                            bankSnapshot.data!.snapshot.value
-                                                as Map;
-                                        final commissionsData =
-                                            Map<String, dynamic>.from(data);
-                                        final Set<String> banks = {};
-                                        commissionsData.forEach((key, value) {
-                                          try {
-                                            final commission =
-                                                CommissionModel.fromMap(
-                                                  key,
-                                                  Map<String, dynamic>.from(
-                                                    value as Map,
-                                                  ),
-                                                );
-                                            // Normalize bank name: trim and normalize whitespace
-                                            final bankName = commission.bank
-                                                .trim()
-                                                .replaceAll(
-                                                  RegExp(r'\s+'),
-                                                  ' ',
-                                                );
-                                            if (bankName.isNotEmpty) {
-                                              banks.add(bankName);
-                                            }
-                                          } catch (e) {
-                                            // Ignore errors
-                                          }
-                                        });
-                                        banksList.addAll(
-                                          banks.toList()..sort(),
-                                        );
+                                  child: Builder(
+                                    builder: (context) {
+                                      // Get unique banks from loaded commissions
+                                      final Set<String> banks = {};
+                                      for (final commission in _allCommissions) {
+                                        final bankName = commission.bank
+                                            .trim()
+                                            .replaceAll(RegExp(r'\s+'), ' ');
+                                        if (bankName.isNotEmpty) {
+                                          banks.add(bankName);
+                                        }
                                       }
+                                      final List<String> banksList = banks.toList()..sort();
 
                                       // Ensure selected bank value matches one of the items (case-insensitive)
                                       String? effectiveSelectedBank =
@@ -871,16 +897,16 @@ class _CommissionContentState extends State<CommissionContent> {
                                                 vertical: 0,
                                               ),
                                         ),
-                                        hint: const Text(
-                                          'Filter by Bank',
-                                          style: TextStyle(fontSize: 12),
+                                        hint: Text(
+                                          AppLocalizations.translate('Filter by Bank'),
+                                          style: const TextStyle(fontSize: 12),
                                         ),
                                         items: [
-                                          const DropdownMenuItem<String?>(
+                                          DropdownMenuItem<String?>(
                                             value: null,
                                             child: Text(
-                                              'All Banks',
-                                              style: TextStyle(fontSize: 12),
+                                              AppLocalizations.translate('All Banks'),
+                                              style: const TextStyle(fontSize: 12),
                                             ),
                                           ),
                                           ...banksList.map(
@@ -931,9 +957,9 @@ class _CommissionContentState extends State<CommissionContent> {
                                         color: Colors.white,
                                       ),
                                       const SizedBox(width: 8),
-                                      const Text(
-                                        'APPLY FILTERS',
-                                        style: TextStyle(
+                                      Text(
+                                        AppLocalizations.translate('APPLY FILTERS'),
+                                        style: const TextStyle(
                                           color: Colors.white,
                                           fontWeight: FontWeight.bold,
                                           fontSize: 10,
@@ -947,14 +973,10 @@ class _CommissionContentState extends State<CommissionContent> {
                           ),
                     const SizedBox(height: 10),
                     // PlutoGrid Section
-                    StreamBuilder<DatabaseEvent>(
-                      stream: FirebaseDatabase.instance
-                          .ref('commissionsData')
-                          .onValue,
-                      builder: (context, snapshot) {
-                        if (_isInitialLoad &&
-                            snapshot.connectionState ==
-                                ConnectionState.waiting) {
+                    Builder(
+                      builder: (context) {
+                        // Show loading indicator on initial load
+                        if (_isLoading && _isInitialLoad) {
                           return const SizedBox(
                             height: 400,
                             child: Center(
@@ -965,19 +987,34 @@ class _CommissionContentState extends State<CommissionContent> {
                           );
                         }
 
-                        // Mark initial load as complete once we have data
-                        if (_isInitialLoad && snapshot.hasData) {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted) {
-                              setState(() {
-                                _isInitialLoad = false;
-                              });
-                            }
-                          });
+                        // Show error message if any
+                        if (_errorMessage != null && _allCommissions.isEmpty) {
+                          return SizedBox(
+                            height: 400,
+                            child: Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.error_outline, color: Colors.red, size: 50),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    _errorMessage!,
+                                    style: const TextStyle(color: Colors.red),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  ElevatedButton(
+                                    onPressed: _loadCommissions,
+                                    child: const Text('Retry'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
                         }
 
-                        if (!snapshot.hasData ||
-                            snapshot.data!.snapshot.value == null) {
+                        // Show empty state if no data
+                        if (_allCommissions.isEmpty) {
                           return SizedBox(
                             height: 400,
                             child: Center(
@@ -990,7 +1027,7 @@ class _CommissionContentState extends State<CommissionContent> {
                                   ),
                                   const SizedBox(height: 24),
                                   Text(
-                                    "No commission data available",
+                                    AppLocalizations.translate('No commission data available'),
                                     style: TextStyle(
                                       fontSize: isMobile ? 18 : 22,
                                       fontWeight: FontWeight.bold,
@@ -998,9 +1035,9 @@ class _CommissionContentState extends State<CommissionContent> {
                                     ),
                                   ),
                                   const SizedBox(height: 8),
-                                  const Text(
-                                    'Commission requests will appear here',
-                                    style: TextStyle(
+                                  Text(
+                                    AppLocalizations.translate('Commission requests will appear here'),
+                                    style: const TextStyle(
                                       fontSize: 14,
                                       color: Colors.grey,
                                     ),
@@ -1011,21 +1048,15 @@ class _CommissionContentState extends State<CommissionContent> {
                           );
                         }
 
-                        final data = snapshot.data!.snapshot.value as Map;
-                        final commissionsData = Map<String, dynamic>.from(data);
-
+                        // Filter commissions based on search and bank filter
                         final List<CommissionModel> commissions = [];
 
                         print(
                           '🔎 FILTERING START - _appliedSelectedBank: "$_appliedSelectedBank", _appliedSearchQuery: "$_appliedSearchQuery"',
                         );
 
-                        commissionsData.forEach((key, value) {
+                        for (final commission in _allCommissions) {
                           try {
-                            final commission = CommissionModel.fromMap(
-                              key,
-                              Map<String, dynamic>.from(value as Map),
-                            );
                             final matches = _matchesFilters(commission);
                             print('   Result: ${commission.bank} -> $matches');
                             if (matches) {
@@ -1035,9 +1066,9 @@ class _CommissionContentState extends State<CommissionContent> {
                               print('   ❌ REJECTED: ${commission.bank}');
                             }
                           } catch (e) {
-                            print('Error parsing commission $key: $e');
+                            print('Error filtering commission ${commission.itemId}: $e');
                           }
-                        });
+                        }
 
                         print(
                           '📊 FINAL RESULT: ${commissions.length} commissions',
@@ -1066,18 +1097,18 @@ class _CommissionContentState extends State<CommissionContent> {
                                     height: 150,
                                   ),
                                   const SizedBox(height: 24),
-                                  const Text(
-                                    "You're all caught up!",
-                                    style: TextStyle(
+                                  Text(
+                                    AppLocalizations.translate("You're all caught up!"),
+                                    style: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
                                       color: Colors.black87,
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  const Text(
-                                    "No commission data found",
-                                    style: TextStyle(
+                                  Text(
+                                    AppLocalizations.translate('No commission data found'),
+                                    style: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
                                       color: Colors.black87,
@@ -1235,6 +1266,7 @@ class _CommissionContentState extends State<CommissionContent> {
                                           ],
                                         ),
                                         const SizedBox(height: 8),
+                                        
                                         Row(
                                           mainAxisAlignment:
                                               MainAxisAlignment.center,

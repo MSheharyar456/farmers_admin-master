@@ -1,13 +1,13 @@
-import 'dart:async';
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/working_status.dart';
 import 'package:farmers_admin/screens/working_status/add_working_status.dart';
 import 'package:farmers_admin/screens/working_status/edit_working_status.dart';
+import 'package:farmers_admin/services/admin_working_status_api_service.dart';
 import 'package:farmers_admin/widgets/delete_dialog.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:farmers_admin/services/permission_helper.dart';
@@ -41,9 +41,7 @@ class DashboardContent extends StatefulWidget {
 
 class _DashboardContentState extends State<DashboardContent> {
   late PlutoGridStateManager stateManager;
-  late DatabaseReference _dbRef;
   List<WorkingStatus> _workingStatuses = [];
-  StreamSubscription<DatabaseEvent>? _workingStatusSubscription;
   bool _isGridLoaded = false;
   bool _isLoading = true;
   final double rowHeight = 40;
@@ -221,7 +219,7 @@ class _DashboardContentState extends State<DashboardContent> {
                             builder: (context) =>
                                 EditWorkingStatusScreen(status: status),
                           ),
-                        );
+                        ).then((_) => _loadWorkingStatuses());
                       } catch (e) {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -251,10 +249,9 @@ class _DashboardContentState extends State<DashboardContent> {
   @override
   void initState() {
     super.initState();
-    _dbRef = FirebaseDatabase.instance.ref().child('workingStatus');
     _searchController = TextEditingController();
     _loadPermissions();
-    _listenForWorkingStatuses();
+    _loadWorkingStatuses();
   }
 
   Future<void> _loadPermissions() async {
@@ -266,32 +263,32 @@ class _DashboardContentState extends State<DashboardContent> {
     }
   }
 
-  void _listenForWorkingStatuses() {
-    _workingStatusSubscription = _dbRef.onValue.listen((DatabaseEvent event) {
-      if (!mounted) return;
-
-      if (_isLoading) {
-        setState(() => _isLoading = false);
-      }
-
-      if (event.snapshot.value != null) {
-        final rawData = event.snapshot.value as Map<dynamic, dynamic>;
-        final List<WorkingStatus> loadedStatuses = [];
-        rawData.forEach((key, value) {
-          if (value is Map) {
-            final statusMap = Map<dynamic, dynamic>.from(value);
-            loadedStatuses.add(WorkingStatus.fromMap(key, statusMap));
-          }
-        });
+  Future<void> _loadWorkingStatuses() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    try {
+      final service = context.read<AdminWorkingStatusApiService>();
+      final list = await service.getWorkingStatus();
+      final statuses = list.map((e) {
+        final id = e['id']?.toString() ?? '';
+        return WorkingStatus.fromServerMap(id, e);
+      }).toList();
+      if (mounted) {
         setState(() {
-          _workingStatuses = loadedStatuses;
+          _workingStatuses = statuses;
+          _isLoading = false;
         });
         if (_isGridLoaded) _updatePlutoGridRows();
-      } else {
-        setState(() => _workingStatuses = []);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _workingStatuses = [];
+          _isLoading = false;
+        });
         if (_isGridLoaded) _updatePlutoGridRows();
       }
-    });
+    }
   }
 
   bool _matchesFilters(WorkingStatus status) {
@@ -342,7 +339,6 @@ class _DashboardContentState extends State<DashboardContent> {
 
   @override
   void dispose() {
-    _workingStatusSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -491,7 +487,7 @@ class _DashboardContentState extends State<DashboardContent> {
                                         builder: (context) =>
                                             const AddWorkingStatusScreen(),
                                       ),
-                                    );
+                                    ).then((_) => _loadWorkingStatuses());
                                   },
 
                                   icon: const Icon(
@@ -559,7 +555,7 @@ class _DashboardContentState extends State<DashboardContent> {
                                         builder: (context) =>
                                             const AddWorkingStatusScreen(),
                                       ),
-                                    );
+                                    ).then((_) => _loadWorkingStatuses());
                                   },
                                   icon: const Icon(
                                     Icons.add,

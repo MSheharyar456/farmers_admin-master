@@ -1,9 +1,7 @@
 // screens/user_screen.dart - OPTIMIZED VERSION
-import 'dart:async';
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/user_model.dart';
-import 'package:farmers_admin/repositories/user_repository.dart';
 import 'package:farmers_admin/screens/user_management/edit_user_screen.dart';
 import 'package:farmers_admin/viewmodels/user_viewmodel.dart';
 import 'package:farmers_admin/widgets/delete_dialog.dart';
@@ -27,10 +25,7 @@ class _UserScreenState extends State<UserScreen> {
     return ResponsiveScaffold(
       title: "Farmers Admin",
       sideMenu: const SideMenu(),
-      content: ChangeNotifierProvider(
-        create: (_) => UserScreenViewModel(repository: UserRepository()),
-        child: const UserContent(),
-      ),
+      content: const UserContent(),
     );
   }
 }
@@ -47,9 +42,9 @@ class _UserContentState extends State<UserContent> {
   final double rowHeight = 40;
   final double headerHeight = 50;
 
-  // Stream subscription
-  StreamSubscription<List<UserModel>>? _userSubscription;
   bool _isGridLoaded = false;
+  bool _isSelectionMode = false;
+  Set<String> _selectedUserIds = {};
 
   final TextEditingController _searchController = TextEditingController();
 
@@ -61,7 +56,7 @@ class _UserContentState extends State<UserContent> {
   void initState() {
     super.initState();
     _loadPermissions();
-    _initializeData();
+    _loadUsers();
   }
 
   Future<void> _loadPermissions() async {
@@ -75,19 +70,10 @@ class _UserContentState extends State<UserContent> {
     }
   }
 
-  void _initializeData() {
-    final viewModel = context.read<UserScreenViewModel>();
-
-    // Listen to user stream ONCE
-    _userSubscription = UserRepository().getUsersStream().listen((users) {
-      if (!mounted) return;
-      viewModel.loadUsers(users);
-
-      // Update grid only if it's already loaded
-      if (_isGridLoaded) {
-        _updatePlutoGridRows();
-      }
-    });
+  Future<void> _loadUsers() async {
+    if (!mounted) return;
+    await context.read<UserScreenViewModel>().loadFromRepository();
+    if (mounted && _isGridLoaded) _updatePlutoGridRows();
   }
 
   void _updatePlutoGridRows() {
@@ -107,7 +93,6 @@ class _UserContentState extends State<UserContent> {
 
   @override
   void dispose() {
-    _userSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -156,12 +141,20 @@ class _UserContentState extends State<UserContent> {
         ? Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                "Customer's List",
-                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w900,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      "Customer's List",
+                      style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                        color: Colors.black,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  if (_isSelectionMode) _buildBulkActions(context, isMobile),
+                ],
               ),
               const SizedBox(height: 5),
               Text(
@@ -175,6 +168,7 @@ class _UserContentState extends State<UserContent> {
                 ),
               ),
               const SizedBox(height: 15),
+              if (!_isSelectionMode) _buildActionButtons(context, isMobile),
             ],
           )
         : Row(
@@ -207,8 +201,80 @@ class _UserContentState extends State<UserContent> {
                   ],
                 ),
               ),
+              const SizedBox(width: 20),
+              if (_isSelectionMode) 
+                _buildBulkActions(context, isMobile)
+              else 
+                _buildActionButtons(context, isMobile),
             ],
           );
+  }
+
+  Widget _buildActionButtons(BuildContext context, bool isMobile) {
+    return Row(
+      children: [
+        if (!_isSelectionMode)
+          ElevatedButton.icon(
+            onPressed: () {
+              setState(() {
+                _isSelectionMode = true;
+                _selectedUserIds.clear();
+              });
+            },
+            icon: const Icon(Icons.checklist, size: 16),
+            label: const Text('Select', style: TextStyle(fontSize: 12)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+          ),
+
+        const SizedBox(width: 8),
+        IconButton(
+          onPressed: () => _showDeletionStatus(context),
+          icon: const Icon(Icons.delete_outline, color: Colors.orange),
+          tooltip: 'Deletion Status',
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBulkActions(BuildContext context, bool isMobile) {
+    return Row(
+      children: [
+        Text(
+          "${_selectedUserIds.length} selected",
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(width: 8),
+        if (_selectedUserIds.isNotEmpty)
+          ElevatedButton.icon(
+            onPressed: () => _showBulkDeleteDialog(context),
+            icon: const Icon(Icons.delete, size: 16),
+            label: const Text('Delete Selected', style: TextStyle(fontSize: 12)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+          ),
+        const SizedBox(width: 8),
+        TextButton.icon(
+          onPressed: () {
+            setState(() {
+              _isSelectionMode = false;
+              _selectedUserIds.clear();
+              if (_isGridLoaded) {
+                stateManager.clearCurrentSelecting();
+              }
+            });
+          },
+          icon: const Icon(Icons.cancel, size: 16),
+          label: const Text('Cancel', style: TextStyle(fontSize: 12)),
+        ),
+      ],
+    );
   }
 
   Widget _buildFilters(
@@ -645,15 +711,24 @@ class _UserContentState extends State<UserContent> {
                     style: ButtonStyle(
                       overlayColor: WidgetStateProperty.all(Colors.transparent),
                     ),
-                    onPressed: () {
+                    onPressed: () async {
                       if (user != null) {
-                        Navigator.push(
+                        final updated = await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) =>
                                 EditUserScreen(user: user.toMap()),
                           ),
                         );
+                        if (updated == true && context.mounted) {
+                          await context
+                              .read<UserScreenViewModel>()
+                              .loadFromRepository();
+                          // Refresh PlutoGrid rows after data update
+                          if (_isGridLoaded) {
+                            _updatePlutoGridRows();
+                          }
+                        }
                       }
                     },
                   ),
@@ -742,12 +817,29 @@ class _UserContentState extends State<UserContent> {
     });
   }
 
-  String _formatTimestamp(int timestamp) {
+  String _formatTimestamp(dynamic timestamp) {
     try {
-      final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+      if (timestamp == null || timestamp == 0) return "N/A";
+
+      int millis;
+      if (timestamp is int) {
+        millis = timestamp;
+      } else if (timestamp is double) {
+        millis = timestamp.toInt();
+      } else if (timestamp is String) {
+        final parsed = DateTime.tryParse(timestamp);
+        if (parsed == null) return "N/A";
+        millis = parsed.millisecondsSinceEpoch;
+      } else {
+        return "N/A";
+      }
+
+      if (millis == 0) return "N/A";
+
+      final date = DateTime.fromMillisecondsSinceEpoch(millis);
       return "${date.day}-${date.month}-${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}";
     } catch (e) {
-      return "Invalid Date";
+      return "N/A";
     }
   }
 
@@ -1021,6 +1113,46 @@ class _UserContentState extends State<UserContent> {
                 ),
               ],
             ),
+    );
+  }
+
+  void _showDeletionStatus(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Deletion Status'),
+        content: const Text('Showing deletion status for users.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showBulkDeleteDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Bulk Delete'),
+        content: Text('Are you sure you want to delete ${_selectedUserIds.length} selected users?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // TODO: Implement bulk delete
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
     );
   }
 }

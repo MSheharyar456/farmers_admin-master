@@ -2,8 +2,9 @@ import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/farming_tip_model.dart';
 import 'package:farmers_admin/screens/dashboard/dashboard.dart';
-import 'package:firebase_database/firebase_database.dart';
+import 'package:farmers_admin/services/farming_tip_api_service.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 class EditFarmingTipScreen extends StatefulWidget {
   final FarmingTip tip;
@@ -45,134 +46,17 @@ class _EditFarmingTipScreenState extends State<EditFarmingTipScreen> {
   Future<void> _updateFarmingTip() async {
     if (!_formKey.currentState!.validate()) return;
 
-    var tipId = widget.tip.tipId;
-    if (tipId == null || tipId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Error: Tip ID is missing. Cannot update tip.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
     setState(() => _isLoading = true);
-
     try {
-      final dbRef = FirebaseDatabase.instance.ref().child('farminTipOfDay');
-      
-      // If tipId is "default", we need to find the actual key in Firebase
-      if (tipId == 'default') {
-        final snapshot = await dbRef.get();
-        if (snapshot.exists && snapshot.value != null) {
-          final data = snapshot.value;
-          
-          // Check if data is a Map with multiple tips
-          if (data is Map) {
-            // Try to find the tip that matches the current tip's content
-            String? actualKey;
-            data.forEach((key, value) {
-              if (value is Map) {
-                final tipMap = Map<dynamic, dynamic>.from(value);
-                // Match by comparing multiple fields to ensure we find the correct tip
-                final matchesEnglish = tipMap['farmingTipEnglish']?.toString().trim() == 
-                    widget.tip.farmingTipEnglish?.trim();
-                final matchesArabic = tipMap['farmingTipArabic']?.toString().trim() == 
-                    widget.tip.farmingTipArabic?.trim();
-                final matchesGerman = tipMap['farmingTipGerman']?.toString().trim() == 
-                    widget.tip.farmingTipGerman?.trim();
-                final matchesTurkish = tipMap['farmingTipTurkish']?.toString().trim() == 
-                    widget.tip.farmingTipTurkish?.trim();
-                
-                // If at least 2 fields match, consider it a match
-                int matchCount = 0;
-                if (matchesEnglish) matchCount++;
-                if (matchesArabic) matchCount++;
-                if (matchesGerman) matchCount++;
-                if (matchesTurkish) matchCount++;
-                
-                if (matchCount >= 2 && actualKey == null) {
-                  actualKey = key.toString();
-                }
-              }
-            });
-            
-            // If we found a matching key, use it; otherwise check if it's a flat structure
-            if (actualKey != null) {
-              tipId = actualKey;
-            } else if ((data.containsKey('farmingTipEnglish') || 
-                        data.containsKey('farmingTipArabic'))) {
-              // Flat structure - update at root level
-              final updatedData = {
-                'farmingTipEnglish': _englishController.text.trim(),
-                'farmingTipArabic': _arabicController.text.trim(),
-                'farmingTipGerman': _germanController.text.trim(),
-                'farmingTipTurkish': _turkishController.text.trim(),
-                'updatedAt': DateTime.now().millisecondsSinceEpoch,
-              };
-              
-              await dbRef.update(updatedData).timeout(
-                const Duration(seconds: 30),
-                onTimeout: () {
-                  throw Exception('Connection timeout. Please check your internet connection.');
-                },
-              );
-              
-              if (!mounted) return;
-              setState(() => _isLoading = false);
-              
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Farming tip updated successfully!'),
-                  backgroundColor: Colors.green,
-                  duration: Duration(seconds: 2),
-                ),
-              );
-              
-              await Future.delayed(const Duration(milliseconds: 500));
-              if (mounted) {
-                Navigator.pop(context, true);
-              }
-              return;
-            } else {
-              throw Exception('Could not find the tip to update in Firebase.');
-            }
-          }
-        } else {
-          throw Exception('No data found in Firebase.');
-        }
-      }
-      
-      // At this point, tipId should not be null (we checked at the start and handled "default" case)
-      if (tipId == null || tipId.isEmpty) {
-        throw Exception('Invalid tip ID. Cannot update tip.');
-      }
-      
-      // Get reference to the specific tip using the tipId (using ! because we checked it's not null above)
-      final finalTipId = tipId;
-      final tipRef = dbRef.child(finalTipId);
-
-
-      final updatedData = {
-        'farmingTipEnglish': _englishController.text.trim(),
-        'farmingTipArabic': _arabicController.text.trim(),
-        'farmingTipGerman': _germanController.text.trim(),
-        'farmingTipTurkish': _turkishController.text.trim(),
-        'updatedAt': DateTime.now().millisecondsSinceEpoch,
-      };
-
-      // Use update() to update only the specified fields in the existing node
-      await tipRef.update(updatedData).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw Exception('Connection timeout. Please check your internet connection.');
-        },
+      final service = context.read<FarmingTipApiService>();
+      await service.updateFarmingTip(
+        farmingTipEnglish: _englishController.text.trim(),
+        farmingTipArabic: _arabicController.text.trim(),
+        farmingTipGerman: _germanController.text.trim(),
+        farmingTipTurkish: _turkishController.text.trim(),
       );
-
       if (!mounted) return;
-
       setState(() => _isLoading = false);
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Farming tip updated successfully!'),
@@ -180,41 +64,27 @@ class _EditFarmingTipScreenState extends State<EditFarmingTipScreen> {
           duration: Duration(seconds: 2),
         ),
       );
-
       await Future.delayed(const Duration(milliseconds: 500));
-      if (mounted) {
-        Navigator.pop(context, true);
-      }
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       setState(() => _isLoading = false);
-
       if (!mounted) return;
-
       String errorMessage = "Failed to update farming tip. ";
-
-      if (e.toString().contains('timeout') ||
-          e.toString().contains('network') ||
-          e.toString().contains('connection')) {
+      if (e.toString().contains('timeout') || e.toString().contains('network') || e.toString().contains('connection')) {
         errorMessage += "Please check your internet connection and try again.";
       } else if (e.toString().contains('permission')) {
         errorMessage += "You don't have permission to update this tip.";
       } else {
         errorMessage += "Please try again later.";
       }
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(errorMessage),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 4),
-          action: SnackBarAction(
-            label: 'Retry',
-            textColor: Colors.white,
-            onPressed: _updateFarmingTip,
-          ),
+          action: SnackBarAction(label: 'Retry', textColor: Colors.white, onPressed: _updateFarmingTip),
         ),
       );
-
       debugPrint('Error updating farming tip: $e');
     }
   }

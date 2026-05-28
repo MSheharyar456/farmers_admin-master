@@ -1,9 +1,12 @@
+import 'package:dio/dio.dart';
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
-import 'package:farmers_admin/services/fcm_service.dart';
-import 'package:firebase_database/firebase_database.dart';
+import 'package:farmers_admin/config/api_config.dart';
+import 'package:farmers_admin/services/admin_notification_service.dart';
+import 'package:farmers_admin/services/admin_server_auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
 class AddNotifyUserScreen extends StatefulWidget {
   const AddNotifyUserScreen({super.key});
@@ -20,17 +23,9 @@ class _AddNotifyUserScreenState extends State<AddNotifyUserScreen> {
   bool _isLoadingUsers = true;
 
   // User list data
-  List<Map<String, dynamic>> _userList = []; // List of users with userId, userName, userEmail, hasFCMToken
-  final Map<String, String> _allUserTokens = {}; // userId -> fcmToken
+  List<Map<String, dynamic>> _userList = []; // List of users from Firebase
   String _selectedUserId = 'all_users'; // Default to all users
-  String? _selectedUserFCMToken;
-  bool _hasFCMToken = false;
-
-  // Manual token entry when user has no FCM token
-  final TextEditingController _manualTokenController = TextEditingController();
-  String? get _manualFCMToken => _manualTokenController.text.trim().isEmpty
-      ? null
-      : _manualTokenController.text.trim();
+  bool _hasUsers = false;
 
   @override
   void initState() {
@@ -44,108 +39,65 @@ class _AddNotifyUserScreenState extends State<AddNotifyUserScreen> {
   void dispose() {
     _titleController.dispose();
     _messageController.dispose();
-    _manualTokenController.dispose();
     super.dispose();
   }
 
   Future<void> _loadUsers() async {
     try {
-      final snapshot = await FirebaseDatabase.instance
-          .ref('usersAuthData')
-          .get();
+      final authService = Provider.of<AdminServerAuthService>(context, listen: false);
+      final token = authService.authToken;
+      
+      if (token == null || token.isEmpty) {
+        debugPrint('Error: No auth token available');
+        setState(() => _isLoadingUsers = false);
+        return;
+      }
 
-      if (snapshot.exists && snapshot.value != null) {
-        final usersData = Map<dynamic, dynamic>.from(snapshot.value as Map);
+      final dio = Dio(BaseOptions(
+        baseUrl: apiBaseUrl,
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 30),
+      ));
+
+      final response = await dio.get(
+        '/admin/users',
+        queryParameters: {'limit': 500},
+        options: Options(headers: {
+          'Authorization': 'Bearer $token',
+          'X-Authorization': 'Bearer $token',
+        }),
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final List<dynamic> usersData = response.data['users'] ?? [];
         final List<Map<String, dynamic>> userList = [];
-        _allUserTokens.clear();
 
-        usersData.forEach((userId, userData) {
-          if (userData is Map) {
-            final userName = userData['userName']?.toString() ?? 'Unknown User';
-            final userEmail = userData['userMail']?.toString() ?? 'No email';
-            final fcmToken = userData['userFCMToken']?.toString();
-            final hasToken =
-                fcmToken != null &&
-                fcmToken.isNotEmpty &&
-                FCMService.isValidFCMToken(fcmToken);
+        for (final userData in usersData) {
+          final userId = userData['id']?.toString() ?? '';
+          final userName = userData['username']?.toString() ?? 'Unknown User';
+          final userEmail = userData['email']?.toString() ?? 'No email';
 
+          if (userId.isNotEmpty) {
             userList.add({
-              'userId': userId.toString(),
+              'userId': userId,
               'userName': userName,
               'userEmail': userEmail,
-              'hasFCMToken': hasToken,
             });
-
-            if (hasToken) {
-              _allUserTokens[userId.toString()] = fcmToken;
-            }
-
-            debugPrint(
-              'User loaded: $userName (ID: $userId) - FCM Token: ${hasToken ? "Available" : "Missing/Invalid"}',
-            );
+            debugPrint('User loaded from server: $userName (ID: $userId)');
           }
-        });
-
-        // Set FCM token status for all users
-        if (_allUserTokens.isNotEmpty) {
-          _hasFCMToken = true;
-          _selectedUserFCMToken = '${_allUserTokens.length} devices ready';
         }
 
         setState(() {
           _userList = userList;
+          _hasUsers = userList.isNotEmpty;
           _isLoadingUsers = false;
         });
       } else {
-        setState(() {
-          _isLoadingUsers = false;
-        });
+        setState(() => _isLoadingUsers = false);
       }
     } catch (e) {
-      debugPrint('Error loading users: $e');
-      setState(() {
-        _isLoadingUsers = false;
-      });
-    }
-  }
-
-  Future<void> _fetchUserFCMToken(String userId) async {
-    try {
-      debugPrint('Fetching FCM token for user: $userId');
-      final snapshot = await FirebaseDatabase.instance
-          .ref('usersAuthData/$userId/userFCMToken')
-          .get();
-
-      if (snapshot.exists && snapshot.value != null) {
-        final fcmToken = snapshot.value.toString();
-        if (FCMService.isValidFCMToken(fcmToken)) {
-          setState(() {
-            _selectedUserFCMToken = fcmToken;
-            _hasFCMToken = true;
-          });
-          debugPrint(
-            'FCM Token found for user $userId: ${fcmToken.length > 50 ? "${fcmToken.substring(0, 50)}..." : fcmToken}',
-          );
-        } else {
-          setState(() {
-            _selectedUserFCMToken = null;
-            _hasFCMToken = false;
-          });
-          debugPrint('Invalid FCM Token format for user $userId');
-        }
-      } else {
-        setState(() {
-          _selectedUserFCMToken = null;
-          _hasFCMToken = false;
-        });
-        debugPrint('No FCM Token found for user $userId');
-      }
-    } catch (e) {
-      debugPrint('Error fetching FCM token: $e');
-      setState(() {
-        _selectedUserFCMToken = null;
-        _hasFCMToken = false;
-      });
+      debugPrint('Error loading users from server: $e');
+      setState(() => _isLoadingUsers = false);
     }
   }
 
@@ -171,120 +123,49 @@ class _AddNotifyUserScreenState extends State<AddNotifyUserScreen> {
       debugPrint('Message: ${_messageController.text.trim()}');
       debugPrint('========================================');
 
-      // FCM token already loaded for all users
-      // No need to fetch individual token since we're sending to all users
+      // Get auth token from the provider
+      final authService = Provider.of<AdminServerAuthService>(context, listen: false);
+      final authToken = authService.authToken;
 
-      FCMNotificationResult? fcmResult;
-      bool notificationSent = false;
-
-      // Send FCM push notification to ALL users
-      debugPrint('Sending FCM push notification to ALL users...');
-      int successCount = 0;
-      int failureCount = 0;
-
-      final tokens = _allUserTokens.values.toList();
-      if (tokens.isEmpty) {
-        debugPrint('WARNING: No valid FCM tokens found for any user');
+      if (authToken == null || authToken.isEmpty) {
+        throw Exception('Not authenticated. Please login again.');
       }
 
-      for (final token in tokens) {
-        final result = await FCMService.sendPushNotification(
-          fcmToken: token,
-          title: _titleController.text.trim(),
-          message: _messageController.text.trim(),
-          userId: 'all_users',
-        );
-
-        if (result.success) {
-          successCount++;
-        } else {
-          failureCount++;
-        }
-      }
-
-      notificationSent = successCount > 0;
-      fcmResult = FCMNotificationResult(
-        success: notificationSent,
-        message: 'Sent to $successCount users. Failed: $failureCount',
-        timestamp: DateTime.now(),
+      // Send via server API (Socket.IO will deliver in real-time)
+      final result = await AdminNotificationService.sendNotification(
+        title: _titleController.text.trim(),
+        message: _messageController.text.trim(),
+        userId: _selectedUserId == 'all_users' ? null : _selectedUserId,
+        type: 'admin_broadcast',
+        authToken: authToken,
       );
-
-      // Save notification to database
-      final dbRef = FirebaseDatabase.instance.ref().child('userNotifications');
-      final newNotificationRef = dbRef.push();
-
-      final notificationId = newNotificationRef.key!;
-      final notificationDate = DateTime.now().millisecondsSinceEpoch;
-
-      await newNotificationRef
-          .set({
-        'notificationId': notificationId,
-        'notificationTitle': _titleController.text.trim(),
-        'notificationMessage': _messageController.text.trim(),
-        'userId': _selectedUserId,
-        'notificationDate': notificationDate,
-        // 'fcmSent': notificationSent,
-        // 'fcmSentAt': notificationSent
-        //     ? DateTime.now().millisecondsSinceEpoch
-        //     : null,
-        // 'fcmResult': fcmResult?.message,
-        // // CRITICAL: Add this flag to prevent duplicate notifications
-        'skipLocalNotification': notificationSent, // Mobile app should check this!
-
-          })
-          .timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw Exception(
-            'Connection timeout. Please check your internet connection.',
-          );
-        },
-      );
-
-      debugPrint('Notification saved to database with ID: $notificationId');
-
-      if (!mounted) return;
 
       setState(() => _isLoading = false);
 
-      // Only navigate back if notification was successfully pushed
-      if (notificationSent) {
-        // Success: show success snackbar, then navigate back (snackbar will auto-close)
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        // Success: show success snackbar, then navigate back
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text(
-              'Notification saved and pushed successfully to user device!',
+              'Notification sent successfully! Users will receive it in real-time.',
             ),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
         );
-        debugPrint(
-          'SUCCESS: Notification sent successfully via FCM and saved in database',
-        );
-        // Wait for snackbar to show, then navigate back (snackbar will close automatically)
+        debugPrint('SUCCESS: Notification sent via server API');
         await Future.delayed(const Duration(milliseconds: 1500));
         if (mounted) {
           Navigator.pop(context, true);
         }
-
       } else {
-        // Failure: show error snackbar, stay on screen
-        String errorMessage;
-        if (_hasFCMToken) {
-          errorMessage =
-              'Notification saved, but push notification failed.\nReason: ${fcmResult.message ?? "Unknown error"}';
-          debugPrint('WARNING: Notification saved but FCM push failed');
-        } else {
-          errorMessage =
-              'Notification saved in database.\nNote: User FCM token not available, push notification not sent.';
-          debugPrint('INFO: Notification saved but no FCM token available');
-        }
-
+        // Failure: show error snackbar
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: Colors.green,
+            content: Text(result['message'] ?? 'Failed to send notification'),
+            backgroundColor: Colors.red,
             duration: const Duration(seconds: 4),
             action: SnackBarAction(
               label: 'Retry',
@@ -293,7 +174,6 @@ class _AddNotifyUserScreenState extends State<AddNotifyUserScreen> {
             ),
           ),
         );
-        // NO navigation here - user stays on screen to retry
       }
     } catch (e) {
       setState(() => _isLoading = false);
@@ -309,7 +189,7 @@ class _AddNotifyUserScreenState extends State<AddNotifyUserScreen> {
       } else if (e.toString().contains('permission')) {
         errorMessage += "You don't have permission to add notifications.";
       } else {
-        errorMessage += "Please try again later.";
+        errorMessage += e.toString();
       }
 
       debugPrint('ERROR: $errorMessage');
@@ -716,15 +596,7 @@ class _AddNotifyUserScreenState extends State<AddNotifyUserScreen> {
                               // Right Side - Info Card (35%)
                               Expanded(
                                 flex: 35,
-                                child: Builder(
-                                  builder: (context) {
-                              final hasToken =
-                                  _hasFCMToken &&
-                                  _selectedUserFCMToken != null;
-                              final isAllUsers =
-                                  _selectedUserId == 'all_users';
-
-                              return Container(
+                                child: Container(
                                 padding: const EdgeInsets.all(20),
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(12),
@@ -737,47 +609,30 @@ class _AddNotifyUserScreenState extends State<AddNotifyUserScreen> {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          // Header with FCM Status
+                                          // Header with Status
                                           Row(
                                             children: [
                                               Container(
-                                                padding: const EdgeInsets.all(
-                                                  8,
-                                                ),
+                                                padding: const EdgeInsets.all(8),
                                                 decoration: BoxDecoration(
-                                                  color: hasToken
-                                                      ? Colors.green.shade50
-                                                      : Colors.orange.shade50,
+                                                  color: Colors.green.shade50,
                                                   borderRadius:
                                                       BorderRadius.circular(8),
                                                 ),
                                                 child: Icon(
-                                                  hasToken
-                                                      ? Icons
-                                                            .check_circle_outline
-                                                      : Icons.error_outline,
-                                                  color: hasToken
-                                                      ? Colors.green.shade700
-                                                      : Colors.orange.shade700,
+                                                  Icons.check_circle_outline,
+                                                  color: Colors.green.shade700,
                                                   size: 20,
                                                 ),
                                               ),
                                               const SizedBox(width: 12),
                                               Expanded(
                                                 child: Text(
-                                                  hasToken
-                                                      ? (isAllUsers
-                                                            ? 'Ready to Broadcast'
-                                                            : 'FCM Token Available')
-                                                      : 'No FCM Token',
+                                                  'Socket.IO Ready',
                                                   style: TextStyle(
                                                     fontSize: 14,
                                                     fontWeight: FontWeight.bold,
-                                                    color: hasToken
-                                                        ? Colors.green.shade900
-                                                        : Colors
-                                                              .orange
-                                                              .shade900,
+                                                    color: Colors.green.shade900,
                                                   ),
                                                 ),
                                               ),
@@ -800,123 +655,65 @@ class _AddNotifyUserScreenState extends State<AddNotifyUserScreen> {
                                             value: 'All Users (${_userList.length})',
                                           ),
 
-
-
                                           const SizedBox(height: 20),
 
-                                          // FCM Token Status Box
+                                          // Status Box
                                           Container(
-                                              padding: const EdgeInsets.all(12),
-                                              decoration: BoxDecoration(
-                                                color: hasToken
-                                                    ? Colors.green.shade50
-                                                    : Colors.orange.shade50,
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                border: Border.all(
-                                                  color: hasToken
-                                                      ? Colors.green.shade200
-                                                      : Colors.orange.shade200,
-                                                ),
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: Colors.green.shade50,
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: Colors.green.shade200,
                                               ),
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Row(
-                                                    children: [
-                                                      Icon(
-                                                        hasToken
-                                                            ? Icons
-                                                                  .notifications_active
-                                                            : Icons
-                                                                  .notifications_off,
-                                                        color: hasToken
-                                                            ? Colors
-                                                                  .green
-                                                                  .shade700
-                                                            : Colors
-                                                                  .orange
-                                                                  .shade700,
-                                                        size: 18,
-                                                      ),
-                                                      const SizedBox(width: 8),
-                                                      Expanded(
-                                                        child: Text(
-                                                          hasToken
-                                                              ? 'Push Notification Ready'
-                                                              : 'Push Notification Unavailable',
-                                                          style: TextStyle(
-                                                            fontSize: 12,
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                            color: hasToken
-                                                                ? Colors
-                                                                      .green
-                                                                      .shade900
-                                                                : Colors
-                                                                      .orange
-                                                                      .shade900,
-                                                          ),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.notifications_active,
+                                                      color: Colors.green.shade700,
+                                                      size: 18,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        'Real-time Delivery Ready',
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: Colors
+                                                              .green.shade900,
                                                         ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  if (hasToken &&
-                                                      _selectedUserFCMToken !=
-                                                          null) ...[
-                                                    const SizedBox(height: 8),
-                                                    Text(
-                                                      isAllUsers
-                                                          ? 'Recipients:'
-                                                          : 'Token:',
-                                                      style: TextStyle(
-                                                        fontSize: 10,
-                                                        fontWeight:
-                                                            FontWeight.w500,
-                                                        color: Colors
-                                                            .grey
-                                                            .shade700,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 4),
-                                                    SelectableText(
-                                                      _selectedUserFCMToken!,
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        color: Colors.black87,
-                                                        fontFamily:
-                                                            'RobotoMono',
-                                                        fontWeight: isAllUsers
-                                                            ? FontWeight.bold
-                                                            : FontWeight.normal,
-                                                      ),
-                                                    ),
-                                                  ] else if (!hasToken) ...[
-                                                    const SizedBox(height: 8),
-                                                    Text(
-                                                      'User must login to the app to receive push notifications.',
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        color: Colors
-                                                            .orange
-                                                            .shade800,
-                                                        height: 1.3,
                                                       ),
                                                     ),
                                                   ],
-                                                ],
-                                              ),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Text(
+                                                  'Notifications will be delivered instantly via Socket.IO to connected users.',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors.grey.shade700,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
+                                          ),
                                           const SizedBox(height: 20),
                                           // User List
                                           //_buildUserListView(),
                                         ],
                                       ),
-                                    );
-                                  },
-                                ),
+                                    )
                               ),
+
+
                             ],
                           ),
                         ],
@@ -972,215 +769,48 @@ class _AddNotifyUserScreenState extends State<AddNotifyUserScreen> {
   }
 
   Widget _buildFCMTokenStatus() {
-    final hasToken = _hasFCMToken && _selectedUserFCMToken != null;
-
-    final isAllUsers = _selectedUserId == 'all_users';
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: hasToken ? Colors.green.shade50 : Colors.orange.shade50,
+        color: Colors.green.shade50,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: hasToken ? Colors.green.shade200 : Colors.orange.shade200,
+          color: Colors.green.shade200,
           width: 2,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Row
           Row(
             children: [
               Icon(
-                hasToken ? Icons.check_circle : Icons.warning_amber_rounded,
-                color: hasToken ? Colors.green : Colors.orange,
+                Icons.check_circle,
+                color: Colors.green,
                 size: 24,
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  hasToken
-                      ? (isAllUsers
-                            ? 'Ready to Broadcast'
-                            : 'FCM Token Available')
-                      : 'FCM Token Not Available',
+                  'Socket.IO Ready',
                   style: TextStyle(
                     fontSize: 14,
-                    color: hasToken
-                        ? Colors.green.shade900
-                        : Colors.orange.shade900,
+                    color: Colors.green.shade900,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
             ],
           ),
-
-          if (hasToken) ...[
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 12),
-
-            // Instructions
-            if (!isAllUsers)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Colors.blue.shade700,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Copy the FCM token below and use it in Firebase Console to send the notification',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.blue.shade900,
-                          height: 1.4,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            const SizedBox(height: 12),
-
-            // FCM Token Display
-            Text(
-              isAllUsers ? 'Recipients:' : 'FCM Token:',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade700,
-              ),
+          const SizedBox(height: 12),
+          Text(
+            'Notifications will be delivered instantly via Socket.IO to all connected users.',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey.shade700,
+              height: 1.4,
             ),
-            const SizedBox(height: 6),
-
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: SelectableText(
-                      _selectedUserFCMToken!,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontFamily: 'monospace',
-                        color: Colors.grey.shade800,
-                        fontWeight: isAllUsers
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                      ),
-                    ),
-                  ),
-                  if (!isAllUsers) ...[
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.copy, size: 18),
-                      tooltip: 'Copy FCM Token',
-                      onPressed: () async {
-                        // Copy to clipboard
-                        await Clipboard.setData(
-                          ClipboardData(text: _selectedUserFCMToken!),
-                        );
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('✅ FCM Token copied to clipboard!'),
-                              backgroundColor: Colors.green,
-                              duration: Duration(seconds: 2),
-                            ),
-                          );
-                        }
-                      },
-
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.green.shade50,
-                        foregroundColor: Colors.green.shade700,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-
-            if (!isAllUsers) ...[
-              const SizedBox(height: 12),
-
-              // Firebase Console Link
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.purple.shade50,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.purple.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.open_in_new,
-                      color: Colors.purple.shade700,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Send via Firebase Console → Messaging → New Campaign → Test Message',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.purple.shade900,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ] else ...[
-            const SizedBox(height: 12),
-            Text(
-              'This user has not logged into the mobile app or has not granted notification permissions.',
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.orange.shade900,
-                height: 1.4,
-              ),
-            ),
-          ],
-          const SizedBox(height: 16),
-          const Divider(),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _manualTokenController,
-            decoration: const InputDecoration(
-              labelText: 'Manual FCM Token (optional)',
-              hintText: 'Enter FCM token manually to override or if missing',
-              border: OutlineInputBorder(),
-              helperText:
-                  'If provided, this token will be used instead of the stored one.',
-              helperMaxLines: 2,
-            ),
-            style: const TextStyle(fontSize: 12),
-            maxLines: 2,
-            minLines: 1,
           ),
         ],
       ),

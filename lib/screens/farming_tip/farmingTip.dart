@@ -1,16 +1,16 @@
-import 'dart:async';
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/farming_tip_model.dart';
 import 'package:farmers_admin/screens/farming_tip/add_farm_tip.dart';
 import 'package:farmers_admin/screens/farming_tip/edit_farm_tip.dart';
+import 'package:farmers_admin/services/farming_tip_api_service.dart';
 import 'package:farmers_admin/widgets/delete_dialog.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:farmers_admin/services/permission_helper.dart';
+import 'package:provider/provider.dart';
 
 class FarmingTipManagementScreen extends StatefulWidget {
   const FarmingTipManagementScreen({super.key});
@@ -41,9 +41,7 @@ class FarmingContent extends StatefulWidget {
 
 class _FarmingContentState extends State<FarmingContent> {
   late PlutoGridStateManager stateManager;
-  late DatabaseReference _dbRef;
   List<FarmingTip> _tips = [];
-  StreamSubscription<DatabaseEvent>? _tipsSubscription;
   bool _isGridLoaded = false;
   bool _isLoading = true;
   final double rowHeight = 40;
@@ -159,7 +157,7 @@ class _FarmingContentState extends State<FarmingContent> {
                             builder: (context) =>
                                 EditFarmingTipScreen(tip: tip),
                           ),
-                        );
+                        ).then((_) => _loadTips());
                       } catch (e) {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -197,12 +195,18 @@ class _FarmingContentState extends State<FarmingContent> {
                         context: context,
                         title: "Delete Farming Tip",
                         message:
-                            "Are you sure you want to delete this farming tip?",
+                            "Are you sure you want to clear this farming tip?",
                         onConfirm: () async {
-                          await FirebaseDatabase.instance
-                              .ref('farminTipOfDay/$tipId')
-                              .remove();
-                          setState(() {});
+                          try {
+                            final service = context.read<FarmingTipApiService>();
+                            await service.updateFarmingTip(
+                              farmingTipEnglish: '',
+                              farmingTipArabic: '',
+                              farmingTipGerman: '',
+                              farmingTipTurkish: '',
+                            );
+                            if (mounted) _loadTips();
+                          } catch (_) {}
                         },
                       );
                     },
@@ -224,9 +228,32 @@ class _FarmingContentState extends State<FarmingContent> {
   void initState() {
     super.initState();
     _searchController = TextEditingController();
-    _dbRef = FirebaseDatabase.instance.ref().child('farminTipOfDay');
     _loadPermissions();
-    _listenForTips();
+    _loadTips();
+  }
+
+  Future<void> _loadTips() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    try {
+      final service = context.read<FarmingTipApiService>();
+      final tip = await service.getFarmingTip();
+      if (mounted) {
+        setState(() {
+          _tips = [tip];
+          _isLoading = false;
+        });
+        if (_isGridLoaded) _updatePlutoGridRows();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _tips = [];
+          _isLoading = false;
+        });
+        if (_isGridLoaded) _updatePlutoGridRows();
+      }
+    }
   }
 
   Future<void> _loadPermissions() async {
@@ -238,69 +265,6 @@ class _FarmingContentState extends State<FarmingContent> {
         _canDelete = canDelete;
       });
     }
-  }
-
-  void _listenForTips() {
-    _tipsSubscription = _dbRef.onValue.listen((DatabaseEvent event) {
-      if (!mounted) return;
-
-      if (_isLoading) {
-        setState(() => _isLoading = false);
-      }
-
-      if (event.snapshot.value != null) {
-        final rawData = event.snapshot.value;
-        final List<FarmingTip> loadedTips = [];
-
-        // Check if data is a Map
-        if (rawData is Map<dynamic, dynamic>) {
-          // Check if this is a nested structure (multiple tips) or flat structure (single tip)
-          bool hasNestedTips = rawData.values.any(
-            (value) =>
-                value is Map &&
-                (value.containsKey('farmingTipEnglish') ||
-                    value.containsKey('farmingTipArabic')),
-          );
-
-          if (hasNestedTips) {
-            // Nested structure: multiple tips with keys
-            rawData.forEach((key, value) {
-              if (value is Map) {
-                final tipMap = Map<dynamic, dynamic>.from(value);
-                loadedTips.add(FarmingTip.fromMap(key.toString(), tipMap));
-              }
-            });
-
-            // Sort tips by createdAt timestamp, newest first
-            loadedTips.sort((a, b) {
-              final timestampA = a.createdAt ?? 0;
-              final timestampB = b.createdAt ?? 0;
-              return timestampB.compareTo(timestampA); // Newest first
-            });
-          } else if (rawData.containsKey('farmingTipEnglish') ||
-              rawData.containsKey('farmingTipArabic')) {
-            // Flat structure: single tip without key
-            loadedTips.add(FarmingTip.fromMap('default', rawData));
-          } else {
-            // Unknown structure, try to handle as nested anyway
-            rawData.forEach((key, value) {
-              if (value is Map) {
-                final tipMap = Map<dynamic, dynamic>.from(value);
-                loadedTips.add(FarmingTip.fromMap(key.toString(), tipMap));
-              }
-            });
-          }
-        }
-
-        setState(() {
-          _tips = loadedTips;
-        });
-        if (_isGridLoaded) _updatePlutoGridRows();
-      } else {
-        setState(() => _tips = []);
-        if (_isGridLoaded) _updatePlutoGridRows();
-      }
-    });
   }
 
   bool _matchesFilters(FarmingTip tip) {
@@ -347,7 +311,6 @@ class _FarmingContentState extends State<FarmingContent> {
 
   @override
   void dispose() {
-    _tipsSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
   }

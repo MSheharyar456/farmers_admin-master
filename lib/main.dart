@@ -1,9 +1,17 @@
 import 'package:farmers_admin/repositories/user_repository.dart';
+import 'package:farmers_admin/services/admin_dashboard_api_service.dart';
+import 'package:farmers_admin/services/admin_post_service.dart';
+import 'package:farmers_admin/services/admin_report_posts_api_service.dart';
+import 'package:farmers_admin/services/admin_working_status_api_service.dart';
+import 'package:farmers_admin/services/admin_server_auth_service.dart';
+import 'package:farmers_admin/services/admin_crash_reports_api_service.dart';
+import 'package:farmers_admin/services/deleted_users_api_service.dart';
+import 'package:farmers_admin/services/farming_tip_api_service.dart';
+import 'package:farmers_admin/services/slider_api_service.dart';
 import 'package:farmers_admin/viewmodels/dashboard_viewmodel.dart';
 import 'package:farmers_admin/viewmodels/user_viewmodel.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
@@ -44,11 +52,44 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) => UserScreenViewModel(repository: UserRepository()),
+        Provider<AdminServerAuthService>(
+          create: (_) => AdminServerAuthService(),
         ),
-        //ChangeNotifierProvider(create: (_) => PostViewModel()),
-        ChangeNotifierProvider(create: (_) => DashboardViewModel()),
+        ProxyProvider<AdminServerAuthService, AdminPostService>(
+          update: (_, auth, __) => AdminPostService(auth),
+        ),
+        ProxyProvider<AdminServerAuthService, SliderApiService>(
+          update: (_, auth, __) => SliderApiService(auth),
+        ),
+        ProxyProvider<AdminServerAuthService, FarmingTipApiService>(
+          update: (_, auth, __) => FarmingTipApiService(auth),
+        ),
+        ProxyProvider<AdminServerAuthService, UserRepository>(
+          update: (_, auth, __) => UserRepository(auth),
+        ),
+        ProxyProvider<AdminServerAuthService, AdminDashboardApiService>(
+          update: (_, auth, __) => AdminDashboardApiService(auth),
+        ),
+        ProxyProvider<AdminServerAuthService, AdminReportPostsApiService>(
+          update: (_, auth, __) => AdminReportPostsApiService(auth),
+        ),
+        ProxyProvider<AdminServerAuthService, AdminWorkingStatusApiService>(
+          update: (_, auth, __) => AdminWorkingStatusApiService(auth),
+        ),
+        ProxyProvider<AdminServerAuthService, DeletedUsersApiService>(
+          update: (_, auth, __) => DeletedUsersApiService(auth),
+        ),
+        ProxyProvider<AdminServerAuthService, AdminCrashReportsApiService>(
+          update: (_, auth, __) => AdminCrashReportsApiService(auth),
+        ),
+        ChangeNotifierProxyProvider<UserRepository, UserScreenViewModel>(
+          create: (context) => UserScreenViewModel(repository: context.read<UserRepository>()),
+          update: (context, repo, previous) => previous ?? UserScreenViewModel(repository: repo),
+        ),
+        ChangeNotifierProxyProvider<AdminDashboardApiService, DashboardViewModel>(
+          create: (context) => DashboardViewModel(context.read<AdminDashboardApiService>()),
+          update: (context, apiService, previous) => previous ?? DashboardViewModel(apiService),
+        ),
 
         // You can add more providers here if needed later
       ],
@@ -62,9 +103,7 @@ class MyApp extends StatelessWidget {
 
   static final _lightTheme = ThemeData(
     brightness: Brightness.light,
-    textTheme: GoogleFonts.poppinsTextTheme(
-      ThemeData(brightness: Brightness.light).textTheme,
-    ),
+    textTheme: ThemeData(brightness: Brightness.light).textTheme,
     scaffoldBackgroundColor: scaffoldBackgroundColor,
     extensions: <ThemeExtension<dynamic>>[
       AppColors(

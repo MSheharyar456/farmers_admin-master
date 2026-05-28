@@ -1,8 +1,6 @@
-import 'dart:async';
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/user_model.dart';
-import 'package:farmers_admin/repositories/user_repository.dart';
 import 'package:farmers_admin/screens/notify_users/add_notify_user.dart';
 import 'package:farmers_admin/screens/notify_users/edit_notify_user.dart';
 import 'package:farmers_admin/viewmodels/user_viewmodel.dart';
@@ -26,10 +24,7 @@ class _NotifyUsersScreenState extends State<NotifyUsersScreen> {
     return ResponsiveScaffold(
       title: "Farmers Admin",
       sideMenu: const SideMenu(),
-      content: ChangeNotifierProvider(
-        create: (_) => UserScreenViewModel(repository: UserRepository()),
-        child: const NotifyUsersContent(),
-      ),
+      content: const NotifyUsersContent(),
     );
   }
 }
@@ -46,7 +41,7 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
   final double rowHeight = 40;
   final double headerHeight = 50;
 
-  StreamSubscription<List<UserModel>>? _userSubscription;
+  UserScreenViewModel? _viewModel;
   bool _isGridLoaded = false;
 
   final TextEditingController _searchController = TextEditingController();
@@ -54,24 +49,21 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
   @override
   void initState() {
     super.initState();
-    _initializeData();
-  }
-
-  void _initializeData() {
-    // Wait for the next frame to ensure the Provider is available
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final viewModel = context.read<UserScreenViewModel>();
-
-      _userSubscription = UserRepository().getUsersStream().listen((users) {
-        if (!mounted) return;
-        viewModel.loadUsers(users);
-
-        if (_isGridLoaded) {
-          _updatePlutoGridRows();
-        }
-      });
+      _viewModel = context.read<UserScreenViewModel>();
+      _viewModel!.addListener(_onViewModelChanged);
+      _initializeData();
     });
+  }
+
+  void _onViewModelChanged() {
+    if (_isGridLoaded && mounted) _updatePlutoGridRows();
+  }
+
+  Future<void> _initializeData() async {
+    if (!mounted || _viewModel == null) return;
+    await _viewModel!.loadFromRepository();
   }
 
   void _updatePlutoGridRows() {
@@ -91,7 +83,7 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
 
   @override
   void dispose() {
-    _userSubscription?.cancel();
+    _viewModel?.removeListener(_onViewModelChanged);
     _searchController.dispose();
     super.dispose();
   }

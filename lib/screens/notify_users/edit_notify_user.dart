@@ -1,9 +1,12 @@
+import 'package:dio/dio.dart';
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
+import 'package:farmers_admin/config/api_config.dart';
 import 'package:farmers_admin/models/user_notification_model.dart';
-import 'package:farmers_admin/services/fcm_service.dart';
-import 'package:firebase_database/firebase_database.dart';
+import 'package:farmers_admin/services/admin_notification_service.dart';
+import 'package:farmers_admin/services/admin_server_auth_service.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 class EditNotifyUserScreen extends StatefulWidget {
   final UserNotification? notification;
@@ -39,17 +42,7 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
 
   // User dropdown data
   Map<String, String> _users = {}; // userId -> userName
-  Map<String, bool> _userFCMTokenStatus = {}; // userId -> hasFCMToken
-  final Map<String, String> _allUserTokens = {}; // userId -> fcmToken
   String? _selectedUserId;
-  String? _selectedUserFCMToken;
-  bool _hasFCMToken = false;
-
-  // Manual token entry when user has no FCM token
-  final TextEditingController _manualTokenController = TextEditingController();
-  String? get _manualFCMToken => _manualTokenController.text.trim().isEmpty
-      ? null
-      : _manualTokenController.text.trim();
 
   @override
   void initState() {
@@ -78,59 +71,59 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
   }
 
   @override
-  @override
   void dispose() {
     _titleController.dispose();
     _messageController.dispose();
     _userNameController.dispose();
     _userEmailController.dispose();
-    _manualTokenController.dispose();
     super.dispose();
   }
 
   Future<void> _loadUsers() async {
     try {
-      final snapshot = await FirebaseDatabase.instance
-          .ref('usersAuthData')
-          .get();
+      final authService = Provider.of<AdminServerAuthService>(context, listen: false);
+      final token = authService.authToken;
+      
+      if (token == null || token.isEmpty) {
+        debugPrint('Error: No auth token available');
+        setState(() => _isLoadingUsers = false);
+        return;
+      }
 
-      if (snapshot.exists && snapshot.value != null) {
-        final usersData = Map<dynamic, dynamic>.from(snapshot.value as Map);
+      final dio = Dio(BaseOptions(
+        baseUrl: apiBaseUrl,
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 30),
+      ));
+
+      final response = await dio.get(
+        '/admin/users',
+        queryParameters: {'limit': 500},
+        options: Options(headers: {
+          'Authorization': 'Bearer $token',
+          'X-Authorization': 'Bearer $token',
+        }),
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final List<dynamic> usersData = response.data['users'] ?? [];
         final Map<String, String> usersMap = {};
-        final Map<String, bool> fcmTokenStatusMap = {};
 
-        usersData.forEach((userId, userData) {
-          if (userData is Map) {
-            final userName = userData['userName']?.toString() ?? 'Unknown User';
-            final fcmToken = userData['userFCMToken']?.toString();
-            final hasToken =
-                fcmToken != null &&
-                fcmToken.isNotEmpty &&
-                FCMService.isValidFCMToken(fcmToken);
+        for (final userData in usersData) {
+          final userId = userData['id']?.toString() ?? '';
+          final userName = userData['username']?.toString() ?? 'Unknown User';
 
-            // FIXED: Use userId directly (it's already the uid from Firebase)
-            final userIdString = userId.toString();
-            debugPrint('=== LOADING USER ===');
-            debugPrint('Raw userId from Firebase: $userId');
-            debugPrint('Converted userId string: $userIdString');
-            debugPrint('userId runtimeType: ${userId.runtimeType}');
-            usersMap[userIdString] = userName;
-            fcmTokenStatusMap[userIdString] = hasToken;
-
-            if (hasToken) {
-              _allUserTokens[userIdString] = fcmToken;
-            }
-
-            debugPrint(
-              'User loaded: $userName (User ID: $userIdString) - FCM Token: ${hasToken ? "Available" : "Missing/Invalid"}',
-            );
+          if (userId.isNotEmpty) {
+            debugPrint('=== LOADING USER FROM SERVER ===');
+            debugPrint('User ID: $userId');
+            debugPrint('User Name: $userName');
+            usersMap[userId] = userName;
           }
-        });
+        }
 
         // Add "All Users" option if there are users
         if (usersMap.isNotEmpty) {
           usersMap['all_users'] = 'All Users (${usersMap.length})';
-          fcmTokenStatusMap['all_users'] = _allUserTokens.isNotEmpty;
         }
 
         // Set the selected user ID based on mode
@@ -142,11 +135,6 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
             debugPrint('=== ADD MODE INIT ===');
             debugPrint('widget.userId: ${widget.userId}');
             debugPrint('selectedId set to: $selectedId');
-            // If FCM token was passed, set it directly
-            if (widget.userFCMToken != null &&
-                FCMService.isValidFCMToken(widget.userFCMToken!)) {
-              _allUserTokens[widget.userId!] = widget.userFCMToken!;
-            }
           }
         } else {
           // In edit mode, use the notification's userId
@@ -170,24 +158,9 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
 
         setState(() {
           _users = usersMap;
-          _userFCMTokenStatus = fcmTokenStatusMap;
           _selectedUserId = selectedId;
           _isLoadingUsers = false;
         });
-
-        if (selectedId != null) {
-          if (widget.isAddMode &&
-              widget.userFCMToken != null &&
-              FCMService.isValidFCMToken(widget.userFCMToken!)) {
-            // Use the passed FCM token directly
-            setState(() {
-              _selectedUserFCMToken = widget.userFCMToken;
-              _hasFCMToken = true;
-            });
-          } else {
-            _fetchUserFCMToken(selectedId);
-          }
-        }
       } else {
         setState(() {
           _isLoadingUsers = false;
@@ -201,55 +174,20 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
     }
   }
 
-  Future<void> _fetchUserFCMToken(String userId) async {
-    try {
-      debugPrint('Fetching FCM token for user: $userId');
-      final snapshot = await FirebaseDatabase.instance
-          .ref('usersAuthData/$userId/userFCMToken')
-          .get();
-
-      if (snapshot.exists && snapshot.value != null) {
-        final fcmToken = snapshot.value.toString();
-        if (FCMService.isValidFCMToken(fcmToken)) {
-          setState(() {
-            _selectedUserFCMToken = fcmToken;
-            _hasFCMToken = true;
-          });
-          debugPrint('FCM Token found for user $userId');
-        } else {
-          setState(() {
-            _selectedUserFCMToken = null;
-            _hasFCMToken = false;
-          });
-          debugPrint('Invalid FCM Token format for user $userId');
-        }
-      } else {
-        setState(() {
-          _selectedUserFCMToken = null;
-          _hasFCMToken = false;
-        });
-        debugPrint('No FCM Token found for user $userId');
-      }
-    } catch (e) {
-      debugPrint('Error fetching FCM token: $e');
-      setState(() {
-        _selectedUserFCMToken = null;
-        _hasFCMToken = false;
-      });
-    }
-  }
-
   Future<void> _updateNotification() async {
     // Prevent multiple simultaneous calls
     if (_isLoading) return;
 
-    if (!_formKey.currentState!.validate()) return;
+    // Fix: Check if form key is valid before accessing currentState
+    if (_formKey.currentState == null || !_formKey.currentState!.validate()) {
+      return;
+    }
 
     if (_selectedUserId == null || _selectedUserId!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please select a user'),
-          backgroundColor: Colors.green,
+          backgroundColor: Colors.orange,
         ),
       );
       return;
@@ -266,170 +204,43 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
             ? 'Starting notification creation process'
             : 'Starting notification update process',
       );
-      if (!isAddMode) {
-        debugPrint('Notification ID: ${widget.notification!.notificationId}');
-      }
       debugPrint('User ID: $_selectedUserId');
-      debugPrint('User ID Type: ${_selectedUserId.runtimeType}');
-      debugPrint('User ID Length: ${_selectedUserId?.length ?? 0}');
       debugPrint('Selected User Name: ${_userNameController.text}');
-      debugPrint('Users Map Keys: ${_users.keys.toList()}');
       debugPrint('Title: ${_titleController.text.trim()}');
       debugPrint('Message: ${_messageController.text.trim()}');
       debugPrint('========================================');
 
-      // DON'T fetch FCM token again - we already have it from dropdown selection!
-      // Token is fetched automatically when user selects from dropdown
-
-      FCMNotificationResult? fcmResult;
-      bool notificationSent = false;
-
-      // Send FCM push notification
-      if (_selectedUserId == 'all_users') {
-        // Send to ALL users
-        debugPrint('Sending FCM push notification to ALL users...');
-        int successCount = 0;
-        int failureCount = 0;
-
-        final tokens = _allUserTokens.values.toList();
-        if (tokens.isEmpty) {
-          debugPrint('WARNING: No valid FCM tokens found for any user');
-        }
-
-        for (final token in tokens) {
-          final result = await FCMService.sendPushNotification(
-            fcmToken: token,
-            title: _titleController.text.trim(),
-            message: _messageController.text.trim(),
-            userId: 'all_users',
-          );
-
-          if (result.success) {
-            successCount++;
-          } else {
-            failureCount++;
-          }
-        }
-
-        notificationSent = successCount > 0;
-        fcmResult = FCMNotificationResult(
-          success: notificationSent,
-          message: 'Sent to $successCount users. Failed: $failureCount',
-          timestamp: DateTime.now(),
+      // Get auth token from the provider
+      final authService = Provider.of<AdminServerAuthService>(context, listen: false);
+      final authToken = authService.authToken;
+      
+      if (authToken == null || authToken.isEmpty) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Authentication error: Please login again'),
+            backgroundColor: Colors.red,
+          ),
         );
-      } else if ((_hasFCMToken && _selectedUserFCMToken != null) ||
-          _manualFCMToken != null) {
-        final tokenToUse = _manualFCMToken ?? _selectedUserFCMToken!;
-        debugPrint(
-          'Sending FCM push notification using ${_manualFCMToken != null ? 'manual' : 'stored'} token...',
-        );
-
-        fcmResult = await FCMService.sendPushNotification(
-          fcmToken: tokenToUse,
-          title: _titleController.text.trim(),
-          message: _messageController.text.trim(),
-          userId: _selectedUserId!,
-        );
-
-        notificationSent = fcmResult.success;
-        debugPrint('FCM Notification Result: ${fcmResult.message}');
-      } else {
-        debugPrint(
-          'WARNING: Cannot send FCM push notification - FCM token not available for selected user',
-        );
-        debugPrint(
-          'Notification will be ${isAddMode ? "saved" : "updated"} in database only',
-        );
+        return;
       }
 
-      // Save notification in database
-      final dbRef = FirebaseDatabase.instance.ref().child('userNotifications');
-      String notificationId;
-
-      if (isAddMode) {
-        // Create new notification
-        final newNotificationRef = dbRef.push();
-        notificationId = newNotificationRef.key ?? '';
-
-        debugPrint('BEFORE SAVE - _selectedUserId: $_selectedUserId');
-        debugPrint(
-          'BEFORE SAVE - _selectedUserId is null: ${_selectedUserId == null}',
-        );
-        debugPrint(
-          'BEFORE SAVE - _selectedUserId isEmpty: ${_selectedUserId?.isEmpty ?? 'N/A'}',
-        );
-        final newData = {
-          'notificationId': notificationId,
-          'notificationTitle': _titleController.text.trim(),
-          'notificationMessage': _messageController.text.trim(),
-          'userId': _selectedUserId!,
-          'notificationDate': DateTime.now().millisecondsSinceEpoch,
-          // 'fcmSent': notificationSent,
-          // 'fcmSentAt': notificationSent ? DateTime.now().millisecondsSinceEpoch : null,
-          // 'fcmResult': fcmResult?.message,
-          // // CRITICAL: Prevent duplicate notifications in mobile app
-          'skipLocalNotification': notificationSent,
-        };
-
-        await newNotificationRef
-            .set(newData)
-            .timeout(
-              const Duration(seconds: 30),
-              onTimeout: () {
-                throw Exception(
-                  'Connection timeout. Please check your internet connection.',
-                );
-              },
-            );
-
-        debugPrint('Notification created in database with ID: $notificationId');
-        debugPrint('SAVED DATA - userId field: ${newData['userId']}');
-      } else {
-        // Update existing notification
-        notificationId = widget.notification!.notificationId;
-        final notificationRef = dbRef.child(notificationId);
-
-        debugPrint('BEFORE UPDATE - _selectedUserId: $_selectedUserId');
-        debugPrint(
-          'BEFORE UPDATE - _selectedUserId is null: ${_selectedUserId == null}',
-        );
-        final updatedData = {
-          'notificationTitle': _titleController.text.trim(),
-          'notificationMessage': _messageController.text.trim(),
-          'userId': _selectedUserId!,
-          'notificationDate': DateTime.now().millisecondsSinceEpoch,
-          'notificationId': notificationId,
-          // 'fcmSent': notificationSent,
-          // 'fcmSentAt': notificationSent ? DateTime.now().millisecondsSinceEpoch : null,
-          // 'fcmResult': fcmResult?.message,
-          // // CRITICAL: Prevent duplicate notifications in mobile app
-          // 'skipLocalNotification': notificationSent,
-        };
-
-        await notificationRef
-            .update(updatedData)
-            .timeout(
-              const Duration(seconds: 30),
-              onTimeout: () {
-                throw Exception(
-                  'Connection timeout. Please check your internet connection.',
-                );
-              },
-            );
-
-        debugPrint('Notification updated in database with ID: $notificationId');
-        debugPrint('SAVED DATA - userId field: ${updatedData['userId']}');
-      }
+      // Send notification via server API (Socket.IO + MySQL)
+      final result = await AdminNotificationService.sendNotification(
+        title: _titleController.text.trim(),
+        message: _messageController.text.trim(),
+        userId: _selectedUserId == 'all_users' ? null : _selectedUserId,
+        authToken: authToken,
+      );
 
       if (!mounted) return;
       setState(() => _isLoading = false);
 
-      // Only navigate back if notification was successfully pushed
-      if (notificationSent) {
-        // Success: show success snackbar, then navigate back (snackbar will auto-close)
+      if (result['success'] == true) {
+        // Success
         final successMessage = isAddMode
-            ? 'Notification created and pushed successfully to user device!'
-            : 'Notification updated and pushed successfully to user device!';
+            ? 'Notification sent successfully via Socket.IO!'
+            : 'Notification updated successfully!';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(successMessage),
@@ -437,37 +248,20 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
-        debugPrint(
-          'SUCCESS: Notification ${isAddMode ? "created" : "sent"} successfully via FCM and ${isAddMode ? "saved" : "updated"} in database',
-        );
-        // Wait for snackbar to show, then navigate back (snackbar will close automatically)
+        debugPrint('SUCCESS: Notification sent via server API');
+        
+        // Wait for snackbar to show, then navigate back
         await Future.delayed(const Duration(milliseconds: 1500));
         if (mounted) {
           Navigator.pop(context, true);
         }
       } else {
-        // Failure: show error snackbar, stay on screen
-        String errorMessage;
-        if (_hasFCMToken || _manualFCMToken != null) {
-          errorMessage = isAddMode
-              ? 'Notification created, but push notification failed.\nReason: ${fcmResult?.message ?? "Unknown error"}'
-              : 'Notification updated, but push notification failed.\nReason: ${fcmResult?.message ?? "Unknown error"}';
-          debugPrint(
-            'WARNING: Notification ${isAddMode ? "created" : "updated"} but FCM push failed',
-          );
-        } else {
-          errorMessage = isAddMode
-              ? 'Notification created in database.\nNote: User FCM token not available, push notification not sent.'
-              : 'Notification updated in database.\nNote: User FCM token not available, push notification not sent.';
-          debugPrint(
-            'INFO: Notification ${isAddMode ? "created" : "updated"} but no FCM token available',
-          );
-        }
-
+        // Server returned error
+        final errorMsg = result['message'] ?? 'Unknown error';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: Colors.green,
+            content: Text('Failed to send notification: $errorMsg'),
+            backgroundColor: Colors.orange,
             duration: const Duration(seconds: 4),
             action: SnackBarAction(
               label: 'Retry',
@@ -476,23 +270,18 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
             ),
           ),
         );
-        // NO navigation here - user stays on screen to retry
       }
     } catch (e) {
       setState(() => _isLoading = false);
       if (!mounted) return;
-      final isAddMode = widget.isAddMode;
-      String errorMessage = isAddMode
-          ? "Failed to create notification. "
-          : "Failed to update notification. ";
+      
+      String errorMessage = "Failed to send notification. ";
       if (e.toString().contains('timeout') ||
           e.toString().contains('network') ||
           e.toString().contains('connection')) {
-        errorMessage += "Please check your internet connection and try again.";
+        errorMessage += "Please check your internet connection.";
       } else if (e.toString().contains('permission')) {
-        errorMessage += isAddMode
-            ? "You don't have permission to create this notification."
-            : "You don't have permission to update this notification.";
+        errorMessage += "You don't have permission to send notifications.";
       } else {
         errorMessage += "Please try again later.";
       }
@@ -783,9 +572,6 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
                               // Right Side - Info Card (25%)
                               Builder(
                                 builder: (context) {
-                                  final hasToken =
-                                      _hasFCMToken &&
-                                      _selectedUserFCMToken != null;
                                   final isAllUsers =
                                       _selectedUserId == 'all_users';
 
@@ -804,7 +590,7 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          // Header with FCM Status
+                                          // Header with Socket.IO Status
                                           Row(
                                             children: [
                                               Container(
@@ -812,39 +598,24 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
                                                   8,
                                                 ),
                                                 decoration: BoxDecoration(
-                                                  color: hasToken
-                                                      ? Colors.green.shade50
-                                                      : Colors.orange.shade50,
+                                                  color: Colors.blue.shade50,
                                                   borderRadius:
                                                       BorderRadius.circular(8),
                                                 ),
                                                 child: Icon(
-                                                  hasToken
-                                                      ? Icons
-                                                            .check_circle_outline
-                                                      : Icons.error_outline,
-                                                  color: hasToken
-                                                      ? Colors.green.shade700
-                                                      : Colors.orange.shade700,
+                                                  Icons.online_prediction,
+                                                  color: Colors.blue.shade700,
                                                   size: 20,
                                                 ),
                                               ),
                                               const SizedBox(width: 12),
                                               Expanded(
                                                 child: Text(
-                                                  hasToken
-                                                      ? (isAllUsers
-                                                            ? 'Ready to Broadcast'
-                                                            : 'FCM Token Available')
-                                                      : 'No FCM Token',
+                                                  'Socket.IO Ready',
                                                   style: TextStyle(
                                                     fontSize: 14,
                                                     fontWeight: FontWeight.bold,
-                                                    color: hasToken
-                                                        ? Colors.green.shade900
-                                                        : Colors
-                                                              .orange
-                                                              .shade900,
+                                                    color: Colors.blue.shade900,
                                                   ),
                                                 ),
                                               ),
@@ -882,20 +653,16 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
                                             const SizedBox(height: 20),
                                           ],
 
-                                          // FCM Token Status Box
+                                          // Socket.IO Status Box
                                           if (_selectedUserId != null)
                                             Container(
                                               padding: const EdgeInsets.all(12),
                                               decoration: BoxDecoration(
-                                                color: hasToken
-                                                    ? Colors.green.shade50
-                                                    : Colors.orange.shade50,
+                                                color: Colors.blue.shade50,
                                                 borderRadius:
                                                     BorderRadius.circular(8),
                                                 border: Border.all(
-                                                  color: hasToken
-                                                      ? Colors.green.shade200
-                                                      : Colors.orange.shade200,
+                                                  color: Colors.blue.shade200,
                                                 ),
                                               ),
                                               child: Column(
@@ -905,85 +672,37 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
                                                   Row(
                                                     children: [
                                                       Icon(
-                                                        hasToken
-                                                            ? Icons
-                                                                  .notifications_active
-                                                            : Icons
-                                                                  .notifications_off,
-                                                        color: hasToken
-                                                            ? Colors
-                                                                  .green
-                                                                  .shade700
-                                                            : Colors
-                                                                  .orange
-                                                                  .shade700,
+                                                        Icons.notifications_active,
+                                                        color: Colors.blue.shade700,
                                                         size: 18,
                                                       ),
                                                       const SizedBox(width: 8),
                                                       Expanded(
                                                         child: Text(
-                                                          hasToken
-                                                              ? 'Push Notification Ready'
-                                                              : 'Push Notification Unavailable',
+                                                          isAllUsers
+                                                              ? 'Broadcast Mode'
+                                                              : 'Real-time Delivery',
                                                           style: TextStyle(
                                                             fontSize: 12,
                                                             fontWeight:
                                                                 FontWeight.bold,
-                                                            color: hasToken
-                                                                ? Colors
-                                                                      .green
-                                                                      .shade900
-                                                                : Colors
-                                                                      .orange
-                                                                      .shade900,
+                                                            color: Colors.blue.shade900,
                                                           ),
                                                         ),
                                                       ),
                                                     ],
                                                   ),
-                                                  if (hasToken &&
-                                                      _selectedUserFCMToken !=
-                                                          null) ...[
-                                                    const SizedBox(height: 8),
-                                                    Text(
-                                                      isAllUsers
-                                                          ? 'Recipients:'
-                                                          : 'Token:',
-                                                      style: TextStyle(
-                                                        fontSize: 10,
-                                                        fontWeight:
-                                                            FontWeight.w500,
-                                                        color: Colors
-                                                            .grey
-                                                            .shade700,
-                                                      ),
+                                                  const SizedBox(height: 8),
+                                                  Text(
+                                                    isAllUsers
+                                                        ? 'Notification will be sent to all connected users via Socket.IO broadcast.'
+                                                        : 'Notification will be delivered instantly via Socket.IO when user is online.',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: Colors.blue.shade800,
+                                                      height: 1.3,
                                                     ),
-                                                    const SizedBox(height: 4),
-                                                    SelectableText(
-                                                      _selectedUserFCMToken!,
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        color: Colors.black87,
-                                                        fontFamily:
-                                                            'RobotoMono',
-                                                        fontWeight: isAllUsers
-                                                            ? FontWeight.bold
-                                                            : FontWeight.normal,
-                                                      ),
-                                                    ),
-                                                  ] else if (!hasToken) ...[
-                                                    const SizedBox(height: 8),
-                                                    Text(
-                                                      'User must login to the app to receive push notifications.',
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        color: Colors
-                                                            .orange
-                                                            .shade800,
-                                                        height: 1.3,
-                                                      ),
-                                                    ),
-                                                  ],
+                                                  ),
                                                 ],
                                               ),
                                             ),
@@ -1210,113 +929,6 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
           ],
         ),
       ],
-    );
-  }
-
-  Widget _buildFCMTokenStatus() {
-    if (_selectedUserId == null) return const SizedBox.shrink();
-
-    final hasToken = _hasFCMToken && _selectedUserFCMToken != null;
-    final isAllUsers = _selectedUserId == 'all_users';
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: hasToken ? Colors.green.shade50 : Colors.orange.shade50,
-        borderRadius: BorderRadius.circular(5),
-        border: Border.all(
-          color: hasToken ? Colors.green.shade200 : Colors.orange.shade200,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                hasToken ? Icons.check_circle_outline : Icons.error_outline,
-                color: hasToken
-                    ? Colors.green.shade700
-                    : Colors.orange.shade700,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      hasToken
-                          ? (isAllUsers
-                                ? 'Ready to Broadcast'
-                                : 'FCM Token Available')
-                          : 'FCM Token Not Available',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: hasToken
-                            ? Colors.green.shade900
-                            : Colors.orange.shade900,
-                      ),
-                    ),
-                    if (hasToken) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        isAllUsers ? 'Recipients:' : 'Token:',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      SelectableText(
-                        _selectedUserFCMToken!,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.black87,
-                          fontFamily: 'RobotoMono',
-                          fontWeight: isAllUsers
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                        ),
-                      ),
-                    ] else ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'A push notification will not be sent to this user unless a manual token is provided.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.orange.shade800,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const Divider(),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _manualTokenController,
-            decoration: const InputDecoration(
-              labelText: 'Manual FCM Token (optional)',
-              hintText: 'Enter FCM token manually to override or if missing',
-              border: OutlineInputBorder(),
-              helperText:
-                  'If provided, this token will be used instead of the stored one.',
-              helperMaxLines: 2,
-            ),
-            style: const TextStyle(fontSize: 12),
-            maxLines: 2,
-            minLines: 1,
-          ),
-        ],
-      ),
     );
   }
 }

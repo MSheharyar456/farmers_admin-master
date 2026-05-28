@@ -1,13 +1,18 @@
+import 'dart:convert';
+
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
+import 'package:farmers_admin/config/api_config.dart';
 import 'package:farmers_admin/models/post_model.dart';
+import 'package:farmers_admin/services/admin_post_service.dart';
 import 'package:farmers_admin/widgets/cancel_request.dart';
 import 'package:farmers_admin/widgets/expiry_countdown_timer.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
 class EditPostScreen extends StatefulWidget {
   final Post post;
@@ -43,9 +48,6 @@ class EditPostContent extends StatefulWidget {
 
 class _EditPostContentState extends State<EditPostContent> {
   final _formKey = GlobalKey<FormState>();
-  final DatabaseReference _dbRef = FirebaseDatabase.instance.ref().child(
-    'productsPostData',
-  );
 
   // Helper method to format display text
   String _formatDisplayText(String text) {
@@ -63,6 +65,9 @@ class _EditPostContentState extends State<EditPostContent> {
       'leafyGreen': 'Leafy Green',
       'byKg': 'By KG',
       'byBox': 'By Box',
+      // Service types for Delivery/Equipments (backend values)
+      'delivered': 'Delivery',
+      'sold': 'Sell',
     };
 
     // Check if it's a special case
@@ -255,12 +260,26 @@ class _EditPostContentState extends State<EditPostContent> {
   late final TextEditingController _postTopTimeController;
   late final TextEditingController _postIsHomePostTimesController;
   late final TextEditingController _postPutTopTimeController;
+  late final TextEditingController _postSoldExpiryController;
 
   late String? _category;
   late String _gender;
   late String _weightCategory;
   late String _liveStockCategory;
   late String _serviceType;
+  String _normalizeServiceTypeForCategory(String category, String? raw) {
+    final c = category.toLowerCase().trim();
+    final v = (raw ?? '').toLowerCase().trim();
+    // Delivery uses delivered|sold
+    if (c == 'delivery') {
+      if (v.contains('sold') || v == 'sell') return 'sold';
+      return 'delivered';
+    }
+    // Equipments, Agricultural Tools, Land Services etc use sell|rent
+    if (v.contains('rent')) return 'rent';
+    return 'sell';
+  }
+
   late String _quantityUnit;
   String? _postCurrencyCategory;
 
@@ -274,6 +293,7 @@ class _EditPostContentState extends State<EditPostContent> {
   late bool _isHomePost;
   late bool _isLiked;
   late bool _isSold;
+  late int _postIsSoldStatus;
   late bool _isTop;
   late bool _isUpdate;
   late bool _userVerified;
@@ -366,6 +386,9 @@ class _EditPostContentState extends State<EditPostContent> {
     );
 
     _userMailController = TextEditingController(text: post.postUserMail);
+    debugPrint(
+      '[EDIT_POST_INIT] postId=${post.postId} postIsSold(raw)=${post.postIsSold} postIsSoldStatus=${post.postIsSoldStatus} postIsSoldExpiry=${post.postIsSoldExpiry}',
+    );
     _userNameController = TextEditingController(text: post.postUserName);
     _viewsController = TextEditingController(text: post.postViews.toString());
 
@@ -377,6 +400,14 @@ class _EditPostContentState extends State<EditPostContent> {
     );
     _postLimitsController = TextEditingController(
       text: post.postLimits.toString() ?? '0',
+    );
+
+    // DEBUG: Log loaded values
+    debugPrint(
+      '[EDIT_POST_INIT] Loading post ${post.postId}: coloredTimes=${post.postIsColoredTimes}, topTime=${post.postTopTime}, homeTimes=${post.postIsHomePostTimes}, putTopTime=${post.postPutTopTime}',
+    );
+    debugPrint(
+      '[EDIT_POST_INIT] Expiry values: coloredExpiry=${post.postIsColoredExpiry}, topExpiry=${post.postIsTopExpiry}, homeExpiry=${post.postIsHomePostExpiry}, putTopExpiry=${post.postIsPutTopExpiry}',
     );
 
     // Colored Post Expiry Check
@@ -421,6 +452,11 @@ class _EditPostContentState extends State<EditPostContent> {
       text: isPutTopExpired ? '0' : _safeGetPostPutTopTime(post).toString(),
     );
 
+    // Sold Post Expiry
+    _postSoldExpiryController = TextEditingController(
+      text: post.postIsSoldExpiry?.toString() ?? '0',
+    );
+
     // Initialize category
     _category = _categories.contains(post.postCategory)
         ? post.postCategory
@@ -430,7 +466,10 @@ class _EditPostContentState extends State<EditPostContent> {
     _gender = post.postGender ?? "male";
     _weightCategory = post.postWeightCategory ?? "byKg";
     _liveStockCategory = post.postLiveStockCategory ?? "cow";
-    _serviceType = post.postServiceType ?? "sell";
+    _serviceType = _normalizeServiceTypeForCategory(
+      post.postCategory,
+      post.postServiceType,
+    );
     _quantityUnit = post.postWeightCategory ?? "SelectedCategory";
     _isCancelled = post.postCancelApproved ?? false;
 
@@ -438,32 +477,17 @@ class _EditPostContentState extends State<EditPostContent> {
     _isApproved = post.postIsApproved;
     // Apply expiry logic to booleans
     _isFeatured = isFeaturedExpired ? false : (post.postIsFeatured ?? false);
-    _isHomePost = isHomeExpired ? false : (post.postIsHomePost ?? true);
+    _isHomePost = isHomeExpired ? false : (post.postIsHomePost ?? false);
     _isLiked = post.postIsLiked ?? false;
     _isSold = post.postIsSold ?? false;
+    _postIsSoldStatus = post.postIsSoldStatus;
     _isTop = isPutTopExpired ? false : (post.postIsTop ?? false);
     _isUpdate = post.postIsUpdate ?? false;
     _userVerified = post.postUserVerified ?? false;
-    _isPostColored = isColoredExpired ? false : (post.postIsColored ?? true);
+    _isPostColored = isColoredExpired ? false : (post.postIsColored ?? false);
 
-    // Fetch currency category from Firebase
-    _loadCurrencyCategory();
-  }
-
-  Future<void> _loadCurrencyCategory() async {
-    try {
-      final snapshot = await _dbRef
-          .child(widget.post.postId)
-          .child('postCurrencyCategory')
-          .get();
-      if (snapshot.exists && mounted) {
-        setState(() {
-          _postCurrencyCategory = snapshot.value?.toString();
-        });
-      }
-    } catch (e) {
-      debugPrint('Error loading currency category: $e');
-    }
+    // Use currency category from post (from server or list)
+    _postCurrencyCategory = post.postCurrencyCategory;
   }
 
   // Calculate expiry date: if duration hasn't changed, keep old expiry
@@ -472,19 +496,24 @@ class _EditPostContentState extends State<EditPostContent> {
     required int oldDuration,
     required int newDuration,
     required bool isApproved,
+    required bool isPromotionActive,
   }) {
-    // If new duration is zero or less, remove expiry
-    if (newDuration <= 0) return 0;
+    // If promotion is turned OFF, remove expiry
+    if (!isPromotionActive || newDuration <= 0) return 0;
 
     // If post is not approved (and not being approved now), do not start timer.
     if (!isApproved) {
       return currentExpiry ?? 0;
     }
 
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final isExpired =
+        currentExpiry == null || currentExpiry == 0 || currentExpiry < now;
+
     // Logic for Approved Content:
-    // 1. If timer hasn't started yet (null or 0), start it now.
-    //    This handles "Pending -> Approved" transition.
-    if (currentExpiry == null || currentExpiry == 0) {
+    // 1. If timer hasn't started yet (null, 0, or past), start it now.
+    //    This handles "Pending -> Approved" transition and "Expired -> Renewed" transition.
+    if (isExpired) {
       return DateTime.now()
           .add(Duration(days: newDuration))
           .millisecondsSinceEpoch;
@@ -649,18 +678,10 @@ class _EditPostContentState extends State<EditPostContent> {
         });
 
         try {
-          await _dbRef
-              .child(widget.post.postId)
-              .update({
-                'postCancelApproved': true,
-                'updatedAt': DateTime.now().millisecondsSinceEpoch,
-              })
-              .timeout(
-                const Duration(seconds: 30),
-                onTimeout: () {
-                  throw Exception('Connection timeout');
-                },
-              );
+          await context.read<AdminPostService>().updatePost(
+            widget.post.postId,
+            {'postCancelApproved': true},
+          );
 
           if (!mounted) return;
 
@@ -741,10 +762,16 @@ class _EditPostContentState extends State<EditPostContent> {
             'postIsPutTopExpiry': 0,
           };
           break;
+        case 'sold':
+          updates = {'postIsSold': false, 'postIsSoldExpiry': 0};
+          break;
       }
 
       if (updates.isNotEmpty) {
-        await _dbRef.child(widget.post.postId).update(updates);
+        await context.read<AdminPostService>().updatePost(
+          widget.post.postId,
+          updates,
+        );
         debugPrint('Auto-expired promotion: $type');
       }
     } catch (e) {
@@ -802,7 +829,6 @@ class _EditPostContentState extends State<EditPostContent> {
     //   );
     //   return;
     // }
-
 
     // 2. Validation: If Time > 0, Switch MUST be ON.
     if (coloredTime > 0 && !_isPostColored) {
@@ -944,7 +970,7 @@ class _EditPostContentState extends State<EditPostContent> {
         "postIsHomePost": _isHomePost,
         "postIsLiked": _isLiked,
         "postIsColored": _isPostColored,
-        "postIsSold": _isSold,
+        "postIsSold": _postIsSoldStatus,
         "postIsTop": _isTop,
         "postUserVerified": _userVerified,
 
@@ -967,6 +993,7 @@ class _EditPostContentState extends State<EditPostContent> {
           newDuration:
               int.tryParse(_postIsColoredTimesController.text.trim()) ?? 0,
           isApproved: _isApproved,
+          isPromotionActive: _isPostColored,
         ),
 
         "postTopTime": int.tryParse(_postTopTimeController.text.trim()) ?? 0,
@@ -975,14 +1002,17 @@ class _EditPostContentState extends State<EditPostContent> {
           oldDuration: widget.post.postTopTime,
           newDuration: int.tryParse(_postTopTimeController.text.trim()) ?? 0,
           isApproved: _isApproved,
+          isPromotionActive: _isFeatured,
         ),
-        "postIsHomePostTimes": int.tryParse(_postIsHomePostTimesController.text.trim()) ?? 0,
+        "postIsHomePostTimes":
+            int.tryParse(_postIsHomePostTimesController.text.trim()) ?? 0,
         "postIsHomePostExpiry": _calculateExpiry(
           currentExpiry: widget.post.postIsHomePostExpiry,
           oldDuration: widget.post.postIsHomePostTimes ?? 0,
           newDuration:
               int.tryParse(_postIsHomePostTimesController.text.trim()) ?? 0,
           isApproved: _isApproved,
+          isPromotionActive: _isHomePost,
         ),
 
         "postPutTopTime":
@@ -992,8 +1022,34 @@ class _EditPostContentState extends State<EditPostContent> {
           oldDuration: widget.post.postPutTopTime ?? 0,
           newDuration: int.tryParse(_postPutTopTimeController.text.trim()) ?? 0,
           isApproved: _isApproved,
+          isPromotionActive: _isTop,
         ),
+
+        // Sold Post Expiry (read-only display, backend manages this automatically)
+        "postIsSoldExpiry": widget.post.postIsSoldExpiry,
       };
+
+      debugPrint(
+        '[EDIT_POST_SAVE] postId=${widget.post.postId} originalStatus=${widget.post.postIsSoldStatus} currentStatus=$_postIsSoldStatus isSold=$_isSold',
+      );
+      debugPrint(
+        '[EDIT_POST_SAVE] payload postIsSold=${postData["postIsSold"]} postIsSoldExpiry=${postData["postIsSoldExpiry"]}',
+      );
+      // DEBUG: Log calculated expiry values
+      debugPrint('[ADMIN_EDIT_POST] Calculated expiry values:');
+      debugPrint('  isApproved: $_isApproved');
+      debugPrint(
+        '  postIsColoredTimes: ${postData["postIsColoredTimes"]}, expiry: ${postData["postIsColoredExpiry"]}',
+      );
+      debugPrint(
+        '  postTopTime: ${postData["postTopTime"]}, expiry: ${postData["postIsTopExpiry"]}',
+      );
+      debugPrint(
+        '  postIsHomePostTimes: ${postData["postIsHomePostTimes"]}, expiry: ${postData["postIsHomePostExpiry"]}',
+      );
+      debugPrint(
+        '  postPutTopTime: ${postData["postPutTopTime"]}, expiry: ${postData["postIsPutTopExpiry"]}',
+      );
 
       // Add category-specific fields based on organized groups
       switch (_category) {
@@ -1090,24 +1146,21 @@ class _EditPostContentState extends State<EditPostContent> {
             postData["postAge"] = double.tryParse(_ageController.text) ?? 0;
           }
           break;
-
-        case "others":
-          if (_liquidQuantityController.text.isNotEmpty) {
-            postData["postLiquidQuantity"] =
-                double.tryParse(_liquidQuantityController.text) ?? 0;
-          }
-          break;
       }
 
-      await _dbRef
-          .child(widget.post.postId)
-          .update(postData)
-          .timeout(
-            const Duration(seconds: 30),
-            onTimeout: () {
-              throw Exception('Connection timeout');
-            },
-          );
+      // DEBUG: payload being sent
+      debugPrint('[EditPost._updatePost] DEBUG request');
+      debugPrint('  postId: ${widget.post.postId}');
+      debugPrint('  postData: $postData');
+
+      await context.read<AdminPostService>().updatePost(
+        widget.post.postId,
+        postData,
+      );
+
+      debugPrint(
+        '[EditPost._updatePost] DEBUG updatePost completed successfully',
+      );
 
       if (!mounted) return;
 
@@ -1135,12 +1188,24 @@ class _EditPostContentState extends State<EditPostContent> {
       if (mounted) {
         Navigator.pop(context, 'success');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       if (!mounted) return;
 
       setState(() {
         _isLoading = false;
       });
+
+      // DEBUG: full error details for troubleshooting
+      debugPrint('[EditPost._updatePost] DEBUG error');
+      debugPrint('  error: $e');
+      debugPrint('  runtimeType: ${e.runtimeType}');
+      debugPrint('  stackTrace: $stackTrace');
+      if (e is DioException) {
+        debugPrint(
+          '  DioException.response.statusCode: ${e.response?.statusCode}',
+        );
+        debugPrint('  DioException.response.data: ${e.response?.data}');
+      }
 
       // Show error snackbar with try-catch to prevent deactivated widget errors
       if (mounted) {
@@ -1156,8 +1221,6 @@ class _EditPostContentState extends State<EditPostContent> {
           debugPrint('Error showing error snackbar: $snackbarError');
         }
       }
-
-      debugPrint('Error updating post: $e');
     }
   }
 
@@ -1538,16 +1601,19 @@ class _EditPostContentState extends State<EditPostContent> {
     required String label,
     required bool value,
     required void Function(bool) onChanged,
+    bool enabled = true,
   }) {
     return GestureDetector(
-      onTap: _isLoading ? null : () => onChanged(!value),
+      onTap: (!_isLoading && enabled) ? () => onChanged(!value) : null,
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.grey[50],
+          color: enabled ? Colors.grey[50] : Colors.grey[200],
           borderRadius: BorderRadius.circular(5),
-          border: Border.all(color: Colors.grey[200]!),
+          border: Border.all(
+            color: enabled ? Colors.grey[200]! : Colors.grey[350]!,
+          ),
         ),
         child: Row(
           children: [
@@ -1575,7 +1641,9 @@ class _EditPostContentState extends State<EditPostContent> {
               height: 22,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
-                color: value ? Colors.green : Colors.grey[300],
+                color: enabled
+                    ? (value ? Colors.green : Colors.grey[300])
+                    : Colors.grey[400],
               ),
               child: Stack(
                 children: [
@@ -1592,7 +1660,9 @@ class _EditPostContentState extends State<EditPostContent> {
                         style: TextStyle(
                           fontSize: 8,
                           fontWeight: FontWeight.bold,
-                          color: value ? Colors.white : Colors.grey[600],
+                          color: enabled
+                              ? (value ? Colors.white : Colors.grey[600])
+                              : Colors.white,
                         ),
                       ),
                     ),
@@ -1624,6 +1694,25 @@ class _EditPostContentState extends State<EditPostContent> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSoldStatusField() {
+    final bool isExpiredSold = _postIsSoldStatus == 2;
+    return _buildSwitchField(
+      label: 'Sold Post',
+      value: _isSold,
+      enabled: !isExpiredSold,
+      onChanged: (val) {
+        if (isExpiredSold) return;
+        setState(() {
+          _isSold = val;
+          _postIsSoldStatus = val ? 1 : 0;
+        });
+        debugPrint(
+          '[EDIT_POST_SOLD_STATUS] postId=${widget.post.postId} newStatus=$_postIsSoldStatus isSold=$_isSold',
+        );
+      },
     );
   }
 
@@ -1725,7 +1814,8 @@ class _EditPostContentState extends State<EditPostContent> {
               child: _buildDropdownField(
                 label: "Service Type*",
                 value: _serviceType,
-                items: ["sell", "rent"],
+                // Delivery: delivered | sold
+                items: ["delivered", "sold"],
                 onChanged: (val) => setState(() => _serviceType = val!),
               ),
             ),
@@ -1752,7 +1842,10 @@ class _EditPostContentState extends State<EditPostContent> {
               child: _buildDropdownField(
                 label: "Service Type*",
                 value: _serviceType,
-                items: ["sell", "rent"],
+                // Equipments & Agricultural Tools: sell | rent, Delivery: delivered | sold
+                items: _category == "delivery"
+                    ? ["delivered", "sold"]
+                    : ["sell", "rent"],
                 onChanged: (val) => setState(() => _serviceType = val!),
               ),
             ),
@@ -1916,7 +2009,6 @@ class _EditPostContentState extends State<EditPostContent> {
         ),
       ]);
     }
-
     if (fields.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1958,13 +2050,42 @@ class _EditPostContentState extends State<EditPostContent> {
   }
 
   Widget _buildImageGallery() {
-    final sampleImages = (widget.post.postImages is Map)
-        ? (widget.post.postImages as Map).values
-              .map((e) => e.toString())
-              .toList()
-        : (widget.post.postImages ?? []);
+    // Parse postImages which can be: JSON string, List, or Map
+    List<String> sampleImages = [];
+    final dynamic imagesData = widget.post.postImages;
 
-    final imagesToShow = sampleImages.isEmpty ? [] : sampleImages;
+    if (imagesData is String && imagesData.isNotEmpty) {
+      // Try to parse JSON string
+      try {
+        final dynamic decoded = jsonDecode(imagesData);
+        if (decoded is List) {
+          sampleImages = decoded.map((e) => e.toString()).toList();
+        } else if (decoded is Map) {
+          sampleImages = (decoded as Map).values
+              .map((e) => e.toString())
+              .toList();
+        }
+      } catch (e) {
+        // If not valid JSON, treat as single path
+        sampleImages = [imagesData];
+      }
+    } else if (imagesData is List) {
+      sampleImages = (imagesData as List).map((e) => e.toString()).toList();
+    } else if (imagesData is Map) {
+      sampleImages = (imagesData as Map).values
+          .map((e) => e.toString())
+          .toList();
+    }
+
+    // Resolve full URLs for relative image paths
+    final baseUrl = apiBaseUrl;
+    final imagesToShow = sampleImages.map((url) {
+      if (url.isEmpty) return url;
+      if (url.startsWith('http')) return url;
+      // Prepend base URL for relative paths
+      final base = baseUrl.endsWith('/') ? baseUrl : '$baseUrl/';
+      return url.startsWith('/') ? '$baseUrl$url' : '$base$url';
+    }).toList();
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -2116,14 +2237,16 @@ class _EditPostContentState extends State<EditPostContent> {
           GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
+            crossAxisCount: 2, // Changed from 2 to 3 to accommodate 5 boxes
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
             childAspectRatio: 1.8,
             children: [
               _buildExpiryCard(
                 label: "Colored Post",
-                expiryMillis: widget.post.postIsColoredExpiry ?? 0,
+                expiryMillis: _isPostColored
+                    ? (widget.post.postIsColoredExpiry ?? 0)
+                    : 0,
                 icon: Icons.palette_outlined,
                 color: Colors.blue,
                 onExpire: () {
@@ -2138,7 +2261,9 @@ class _EditPostContentState extends State<EditPostContent> {
               ),
               _buildExpiryCard(
                 label: "Featured Post",
-                expiryMillis: widget.post.postIsTopExpiry ?? 0,
+                expiryMillis: _isFeatured
+                    ? (widget.post.postIsTopExpiry ?? 0)
+                    : 0,
                 icon: Icons.star_outline,
                 color: Colors.orange,
                 onExpire: () {
@@ -2153,7 +2278,9 @@ class _EditPostContentState extends State<EditPostContent> {
               ),
               _buildExpiryCard(
                 label: "Home Post",
-                expiryMillis: widget.post.postIsHomePostExpiry ?? 0,
+                expiryMillis: _isHomePost
+                    ? (widget.post.postIsHomePostExpiry ?? 0)
+                    : 0,
                 icon: Icons.home_outlined,
                 color: Colors.purple,
                 onExpire: () {
@@ -2168,7 +2295,9 @@ class _EditPostContentState extends State<EditPostContent> {
               ),
               _buildExpiryCard(
                 label: "Put Top",
-                expiryMillis: widget.post.postIsPutTopExpiry ?? 0,
+                expiryMillis: _isTop
+                    ? (widget.post.postIsPutTopExpiry ?? 0)
+                    : 0,
                 icon: Icons.vertical_align_top,
                 color: Colors.green,
                 onExpire: () {
@@ -2177,6 +2306,22 @@ class _EditPostContentState extends State<EditPostContent> {
                     setState(() {
                       _isTop = false;
                       _postPutTopTimeController.text = '0';
+                    });
+                  }
+                },
+              ),
+              _buildExpiryCard(
+                label: "Sold Post",
+                expiryMillis: _isSold ? (widget.post.postIsSoldExpiry ?? 0) : 0,
+                icon: Icons.sell_outlined,
+                color: Colors.red,
+                onExpire: () {
+                  if (_isSold) {
+                    // Do not call _expirePromotionInDatabase('sold') here.
+                    // The backend cron job handles transitioning postIsSold to 2.
+                    // Setting it to false here would overwrite the backend's logic.
+                    setState(() {
+                      _postSoldExpiryController.text = '0';
                     });
                   }
                 },
@@ -2301,6 +2446,7 @@ class _EditPostContentState extends State<EditPostContent> {
                           _userMailController.text,
                           label: 'Email',
                         ),
+
                         child: Text(
                           _userMailController.text,
                           style: const TextStyle(
@@ -2831,13 +2977,7 @@ class _EditPostContentState extends State<EditPostContent> {
                       ),
                     ),
                     const SizedBox(width: 16),
-                    Expanded(
-                      child: _buildSwitchField(
-                        label: "Sold Post",
-                        value: _isSold,
-                        onChanged: (val) => setState(() => _isSold = val),
-                      ),
-                    ),
+                    Expanded(child: _buildSoldStatusField()),
                   ],
                 ),
 

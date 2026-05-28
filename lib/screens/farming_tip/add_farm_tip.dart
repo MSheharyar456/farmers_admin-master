@@ -1,7 +1,8 @@
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
-import 'package:firebase_database/firebase_database.dart';
+import 'package:farmers_admin/services/farming_tip_api_service.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 class AddFarmingTipScreen extends StatefulWidget {
   const AddFarmingTipScreen({super.key});
@@ -31,29 +32,16 @@ class _AddFarmingTipScreenState extends State<AddFarmingTipScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
-
     try {
-      final dbRef = FirebaseDatabase.instance.ref().child('farminTipOfDay');
-      final newTipRef = dbRef.push();
-
-
-      await newTipRef.set({
-        'farmingTipEnglish': _englishController.text.trim(),
-        'farmingTipArabic': _arabicController.text.trim(),
-        'farmingTipGerman': _germanController.text.trim(),
-        'farmingTipTurkish': _turkishController.text.trim(),
-        'createdAt': DateTime.now().millisecondsSinceEpoch,
-      }).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw Exception('Connection timeout. Please check your internet connection.');
-        },
+      final service = context.read<FarmingTipApiService>();
+      await service.updateFarmingTip(
+        farmingTipEnglish: _englishController.text.trim(),
+        farmingTipArabic: _arabicController.text.trim(),
+        farmingTipGerman: _germanController.text.trim(),
+        farmingTipTurkish: _turkishController.text.trim(),
       );
-
       if (!mounted) return;
-
       setState(() => _isLoading = false);
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Farming tip added successfully!'),
@@ -61,41 +49,27 @@ class _AddFarmingTipScreenState extends State<AddFarmingTipScreen> {
           duration: Duration(seconds: 2),
         ),
       );
-
       await Future.delayed(const Duration(milliseconds: 500));
-      if (mounted) {
-        Navigator.pop(context, true);
-      }
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       setState(() => _isLoading = false);
-
       if (!mounted) return;
-
       String errorMessage = "Failed to add farming tip. ";
-
-      if (e.toString().contains('timeout') ||
-          e.toString().contains('network') ||
-          e.toString().contains('connection')) {
+      if (e.toString().contains('timeout') || e.toString().contains('network') || e.toString().contains('connection')) {
         errorMessage += "Please check your internet connection and try again.";
       } else if (e.toString().contains('permission')) {
         errorMessage += "You don't have permission to add tips.";
       } else {
         errorMessage += "Please try again later.";
       }
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(errorMessage),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 4),
-          action: SnackBarAction(
-            label: 'Retry',
-            textColor: Colors.white,
-            onPressed: _saveFarmingTip,
-          ),
+          action: SnackBarAction(label: 'Retry', textColor: Colors.white, onPressed: _saveFarmingTip),
         ),
       );
-
       debugPrint('Error adding farming tip: $e');
     }
   }
