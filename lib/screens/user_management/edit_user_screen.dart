@@ -4,10 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:http/http.dart' as http;
+import '../../config/api_config.dart';
 import '../../common/app_header.dart';
 import '../../common/side_menu.dart';
 import '../../repositories/user_repository.dart';
 import '../../services/admin_server_auth_service.dart';
+import '../../widgets/loading_overlay.dart';
 
 class EditUserScreen extends StatefulWidget {
   final Map user;
@@ -18,6 +20,7 @@ class EditUserScreen extends StatefulWidget {
 }
 
 class _EditUserScreenState extends State<EditUserScreen> {
+  static const int _dayMillis = 24 * 60 * 60 * 1000;
   final _formKey = GlobalKey<FormState>();
   final AdminServerAuthService _authService = AdminServerAuthService();
   late UserRepository _userRepository;
@@ -33,6 +36,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
   late TextEditingController _totalFollowersController;
   late TextEditingController _userTotalPostsTimeController;
   //late TextEditingController _addressController;
+  late final int _initialUserTotalPostsTime;
 
   bool _userIsVerified = false;
   final String _month = "January";
@@ -48,6 +52,16 @@ class _EditUserScreenState extends State<EditUserScreen> {
   int _postsUsed = 0;
   int _editsUsed = 0;
   bool _isLoadingUsage = false;
+
+  String? _firstNonEmptyString(List<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString().trim();
+      if (text != null && text.isNotEmpty) {
+        return text;
+      }
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -75,24 +89,46 @@ class _EditUserScreenState extends State<EditUserScreen> {
     _userTotalPostsTimeController = TextEditingController(
       text: (user['userTotalPostsTime'] ?? 0).toString(),
     );
+    _initialUserTotalPostsTime =
+        int.tryParse((user['userTotalPostsTime'] ?? 0).toString()) ?? 0;
     //_addressController = TextEditingController(text: user['userAddress'] ?? '');
 
     _userIsVerified = user['userIsVerified'] ?? false;
 
     // Debug the image URL
-    print('User data from Firebase:');
-    print(user);
+    print('[EDIT_USER][INIT] user keys: ${user.keys.toList()}');
+    print('[EDIT_USER][INIT] raw user data: $user');
+    print('[EDIT_USER][INIT] profileImage=${user['profileImage']}');
+    print('[EDIT_USER][INIT] profile_image=${user['profile_image']}');
+    print('[EDIT_USER][INIT] userImage=${user['userImage']}');
+    print('[EDIT_USER][INIT] user_image=${user['user_image']}');
+    print('[EDIT_USER][INIT] image=${user['image']}');
+    print('[EDIT_USER][INIT] profileColor=${user['profileColor']}');
+    print('[EDIT_USER][INIT] profile_color=${user['profile_color']}');
+    print('[EDIT_USER][INIT] userImageColor=${user['userImageColor']}');
+    print('[EDIT_USER][INIT] user_profile_color=${user['user_profile_color']}');
+    print('[EDIT_USER][INIT] sellerColor=${user['sellerColor']}');
+    print('[EDIT_USER][INIT] seller_color=${user['seller_color']}');
 
-    // Get image URL
-    _uploadedImagePath = user['userImage'] ?? '';
+    // Get image URL from whichever backend field is present
+    _uploadedImagePath = _firstNonEmptyString([
+      user['profileImage'],
+      user['profile_image'],
+      user['userImage'],
+      user['user_image'],
+      user['image'],
+    ]);
+    print('[EDIT_USER][INIT] selected image path: $_uploadedImagePath');
 
     // If it's a Google image URL, try to cache it to Firebase Storage
     if (_uploadedImagePath != null &&
         _uploadedImagePath!.contains('googleusercontent.com')) {
+      print('[EDIT_USER][INIT] detected googleusercontent image, caching...');
       _cacheGoogleImage(_uploadedImagePath!);
     }
 
     loginDate = _formatTimestamp(user['userLoginDate']);
+    print('[EDIT_USER][INIT] loginDate formatted: $loginDate');
 
     // Fetch usage data
     _fetchUserUsage();
@@ -139,16 +175,18 @@ class _EditUserScreenState extends State<EditUserScreen> {
         _isImageLoading = true;
       });
 
-      print('Attempting to cache Google image...');
+      print('[EDIT_USER][CACHE] Attempting to cache Google image: $googleImageUrl');
 
       final userId =
           widget.user['id'] as String? ?? widget.user['uid'] as String?;
       if (userId == null || userId.isEmpty) {
+        print('[EDIT_USER][CACHE] userId missing; abort cache');
         setState(() {
           _isImageLoading = false;
         });
         return;
       }
+      print('[EDIT_USER][CACHE] userId=$userId');
 
       // First, check if we already have a cached version in Firebase Storage
       try {
@@ -156,10 +194,11 @@ class _EditUserScreenState extends State<EditUserScreen> {
           'user_profiles/$userId/profile.jpg',
         );
 
+        print('[EDIT_USER][CACHE] checking existing storage object: user_profiles/$userId/profile.jpg');
         final cachedUrl = await storageRef.getDownloadURL();
 
         // If we got here, the image already exists in Firebase Storage
-        print('Using cached image from Firebase Storage: $cachedUrl');
+        print('[EDIT_USER][CACHE] Using cached image from Firebase Storage: $cachedUrl');
 
         setState(() {
           _uploadedImagePath = cachedUrl;
@@ -167,14 +206,24 @@ class _EditUserScreenState extends State<EditUserScreen> {
         });
 
         // Update database if it's still pointing to Google URL
-        if (widget.user['userImage'] != cachedUrl) {
+        final currentImage = _firstNonEmptyString([
+          widget.user['profileImage'],
+          widget.user['profile_image'],
+          widget.user['userImage'],
+          widget.user['user_image'],
+          widget.user['image'],
+        ]);
+        if (currentImage != cachedUrl) {
+          print('[EDIT_USER][CACHE] backend image differs, updating profileImage to cached url');
           await _userRepository.updateUser(userId, {'profileImage': cachedUrl});
+        } else {
+          print('[EDIT_USER][CACHE] backend already matches cached url');
         }
 
         return;
       } catch (e) {
         // Image doesn't exist in storage yet, continue to download and upload
-        print('No cached image found, downloading from Google...');
+        print('[EDIT_USER][CACHE] No cached image found, downloading from Google... $e');
       }
 
       // Download the image from Google
@@ -182,6 +231,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
 
       if (response.statusCode == 200) {
         final bytes = response.bodyBytes;
+        print('[EDIT_USER][CACHE] downloaded google image bytes: ${bytes.length}');
 
         // Upload to Firebase Storage
         final storageRef = FirebaseStorage.instance.ref().child(
@@ -195,9 +245,11 @@ class _EditUserScreenState extends State<EditUserScreen> {
 
         // Get the download URL
         final downloadUrl = await storageRef.getDownloadURL();
+        print('[EDIT_USER][CACHE] new Firebase download URL: $downloadUrl');
 
         // Update backend database
         await _userRepository.updateUser(userId, {'profileImage': downloadUrl});
+        print('[EDIT_USER][CACHE] backend updated with profileImage=$downloadUrl');
 
         // Update local state
         setState(() {
@@ -207,13 +259,13 @@ class _EditUserScreenState extends State<EditUserScreen> {
 
         print('Successfully cached image to Firebase Storage: $downloadUrl');
       } else {
-        print('Failed to download Google image: ${response.statusCode}');
+        print('[EDIT_USER][CACHE] Failed to download Google image: ${response.statusCode}');
         setState(() {
           _isImageLoading = false;
         });
       }
     } catch (e) {
-      print('Error caching Google image: $e');
+      print('[EDIT_USER][CACHE] Error caching Google image: $e');
       setState(() {
         _isImageLoading = false;
       });
@@ -304,14 +356,18 @@ class _EditUserScreenState extends State<EditUserScreen> {
             int.tryParse(_userFollowingController.text.trim()) ?? 0,
         "userFollowerBoost":
             (int.tryParse(_totalFollowersController.text.trim()) ?? 0) - (widget.user['actualFollowersCount'] ?? 0),
-        "userTotalPostsTime":
-            int.tryParse(_userTotalPostsTimeController.text.trim()) ?? 0,
-        "userTotalPostsExpiryTime": DateTime.now()
-            .add(Duration(days: int.tryParse(_userTotalPostsTimeController.text.trim()) ?? 0))
-            .millisecondsSinceEpoch,
         // "userProfileImage": _uploadedImagePath ?? "",
         // "updatedAt": DateTime.now().millisecondsSinceEpoch,
       };
+
+      final currentTotalPostDays =
+          int.tryParse(_userTotalPostsTimeController.text.trim()) ?? 0;
+      if (currentTotalPostDays != _initialUserTotalPostsTime) {
+        updatedData["userTotalPostsTime"] = currentTotalPostDays;
+        updatedData["userTotalPostsExpiryTime"] = DateTime.now()
+            .add(Duration(days: currentTotalPostDays))
+            .millisecondsSinceEpoch;
+      }
 
       final userId = widget.user['id'] as String? ?? widget.user['uid'] as String?;
       if (userId == null) {
@@ -491,6 +547,213 @@ class _EditUserScreenState extends State<EditUserScreen> {
               // Recalculate remaining when limit changes
               setState(() {});
             },
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Colors.grey[50],
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(5),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.green, width: 2),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 0,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  int _parseIntValue(dynamic value, {int fallback = 0}) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? fallback;
+    return fallback;
+  }
+
+  DateTime? _parseDateTimeValue(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is int) {
+      if (value <= 0) return null;
+      return DateTime.fromMillisecondsSinceEpoch(value);
+    }
+    if (value is double) {
+      final millis = value.toInt();
+      if (millis <= 0) return null;
+      return DateTime.fromMillisecondsSinceEpoch(millis);
+    }
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return null;
+      final parsedInt = int.tryParse(trimmed);
+      if (parsedInt != null && parsedInt > 0) {
+        return DateTime.fromMillisecondsSinceEpoch(parsedInt);
+      }
+      return DateTime.tryParse(trimmed);
+    }
+    if (value is Map && value.containsKey('millisecondsSinceEpoch')) {
+      final raw = value['millisecondsSinceEpoch'];
+      final millis = raw is int
+          ? raw
+          : raw is double
+              ? raw.toInt()
+              : int.tryParse(raw?.toString() ?? '');
+      if (millis != null && millis > 0) {
+        return DateTime.fromMillisecondsSinceEpoch(millis);
+      }
+    }
+    return null;
+  }
+
+  String _normalizeImageUrl(String url) {
+    final trimmed = url.trim();
+    print('[EDIT_USER][IMG] normalize input="$url" trimmed="$trimmed"');
+    if (trimmed.isEmpty) return trimmed;
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      print('[EDIT_USER][IMG] already absolute: $trimmed');
+      return trimmed;
+    }
+    if (trimmed.startsWith('//')) {
+      final resolved = 'https:$trimmed';
+      print('[EDIT_USER][IMG] protocol-relative resolved: $resolved');
+      return resolved;
+    }
+    final base = apiBaseUrl.endsWith('/') ? apiBaseUrl.substring(0, apiBaseUrl.length - 1) : apiBaseUrl;
+    final path = trimmed.startsWith('/') ? trimmed : '/$trimmed';
+    final resolved = '$base$path';
+    print('[EDIT_USER][IMG] relative resolved: $resolved');
+    return resolved;
+  }
+
+  DateTime? _getUserTotalPostExpiry() {
+    final user = widget.user;
+    return _parseDateTimeValue(
+      user['userTotalPostsExpiryTime'] ??
+          user['post_limit_expires_at'] ??
+          user['postLimitExpiresAt'] ??
+          user['postLimitExpiresAtMs'],
+    );
+  }
+
+  int _getTotalPostDays() {
+    return _parseIntValue(_userTotalPostsTimeController.text, fallback: 0);
+  }
+
+  int _getRemainingPostDays() {
+    final expiry = _getUserTotalPostExpiry();
+    if (expiry == null) return 0;
+    final remainingMs = expiry.difference(DateTime.now()).inMilliseconds;
+    if (remainingMs <= 0) return 0;
+    return (remainingMs + _dayMillis - 1) ~/ _dayMillis;
+  }
+
+  int _getUsedPostDays() {
+    final totalDays = _getTotalPostDays();
+    if (totalDays <= 0) return 0;
+    final usedDays = totalDays - _getRemainingPostDays();
+    if (usedDays < 0) return 0;
+    if (usedDays > totalDays) return totalDays;
+    return usedDays;
+  }
+
+  Widget _buildPostTimerSummary() {
+    final totalDays = _getTotalPostDays();
+    final usedDays = _getUsedPostDays();
+    final remainingDays = _getRemainingPostDays();
+    final summaryColor =
+        remainingDays <= 0 && totalDays > 0 ? Colors.red : Colors.green;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: summaryColor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: summaryColor.withOpacity(0.25)),
+      ),
+      child: Text(
+        'Used: $usedDays days   Remaining: $remainingDays days   Total: $totalDays days',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: summaryColor,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimerTextField({
+    required String label,
+    required TextEditingController controller,
+    String? Function(String?)? validator,
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
+  }) {
+    final totalDays = _getTotalPostDays();
+    final usedDays = _getUsedPostDays();
+    final remainingDays = _getRemainingPostDays();
+    final summaryColor =
+        remainingDays <= 0 && totalDays > 0 ? Colors.red : Colors.green;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Colors.black,
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (_isLoadingUsage)
+              const SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.grey,
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: summaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: summaryColor.withOpacity(0.3)),
+                ),
+                child: Text(
+                  'Used: $usedDays, Remaining: $remainingDays',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: summaryColor,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        SizedBox(
+          height: 40,
+          child: TextFormField(
+            style: const TextStyle(fontSize: 12),
+            controller: controller,
+            validator: validator,
+            keyboardType: keyboardType,
+            enabled: !_isLoading,
+            inputFormatters: inputFormatters,
+            onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
               filled: true,
               fillColor: Colors.grey[50],
@@ -759,6 +1022,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
   Widget _buildImagePreview() {
     // Show loading indicator while caching/loading image
     if (_isImageLoading) {
+      print('[EDIT_USER][IMG] build preview -> image loading state');
       return Container(
         height: 200,
         width: 200,
@@ -774,18 +1038,35 @@ class _EditUserScreenState extends State<EditUserScreen> {
 
     // Get user's profile color from the user data
     final user = widget.user;
-    final colorHex = user['profileColor'] as String? ?? user['profile_color'] as String?;
-    final bgColor = _parseHexColor(colorHex, fallback: const Color(0xFFDAD721));
+    final colorHex = ([
+      user['profileColor'],
+      user['profile_color'],
+      user['userImageColor'],
+      user['user_profile_color'],
+      user['sellerColor'],
+      user['seller_color'],
+      user['profileImageColor'],
+      user['profile_image_color'],
+      user['imageColor'],
+      user['image_color'],
+    ].firstWhere(
+      (value) => value != null && value.toString().trim().isNotEmpty,
+      orElse: () => null,
+    ))?.toString();
+    final bgColor = _parseHexColor(colorHex, fallback: Colors.grey.shade300);
+    print('[EDIT_USER][IMG] colorHex="$colorHex" bgColor=$bgColor');
 
-    // Check if image URL exists, is not empty, and is not default_pfp.jpg
+    // Check if image URL exists and is not the default placeholder.
     final hasValidImage = _uploadedImagePath != null &&
         _uploadedImagePath!.isNotEmpty &&
         _uploadedImagePath != 'default_pfp.jpg' &&
-        !_uploadedImagePath!.endsWith('default_pfp.jpg') &&
-        !_uploadedImagePath!.contains('googleusercontent.com');
+        !_uploadedImagePath!.endsWith('default_pfp.jpg');
+    print('[EDIT_USER][IMG] _uploadedImagePath=$_uploadedImagePath hasValidImage=$hasValidImage');
 
     if (hasValidImage) {
-      print('Loading user profile image: $_uploadedImagePath');
+      print('[EDIT_USER][IMG] rendering image preview');
+      final resolvedImageUrl = _normalizeImageUrl(_uploadedImagePath!);
+      print('[EDIT_USER][IMG] resolved image url=$resolvedImageUrl');
       return Container(
         height: 210,
         width: 260,
@@ -796,12 +1077,15 @@ class _EditUserScreenState extends State<EditUserScreen> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: Image.network(
-            _uploadedImagePath!,
+            resolvedImageUrl,
             width: 260,
             height: 210,
             fit: BoxFit.cover,
             loadingBuilder: (context, child, loadingProgress) {
               if (loadingProgress == null) return child;
+              print(
+                '[EDIT_USER][IMG] network loading progress expected=${loadingProgress.expectedTotalBytes} loaded=${loadingProgress.cumulativeBytesLoaded}',
+              );
               return Container(
                 color: bgColor,
                 child: Center(
@@ -816,8 +1100,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
               );
             },
             errorBuilder: (context, error, stackTrace) {
-              print('Error loading image: $error');
+              print('[EDIT_USER][IMG] Error loading image: $error');
               // Fallback to initials on error
+              print('[EDIT_USER][IMG] falling back to initials after image error');
               return Center(
                 child: Text(
                   _userInitials,
@@ -835,6 +1120,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
     }
 
     // No valid image - show colored rectangle with initials
+    print('[EDIT_USER][IMG] no valid image, showing initials only');
     return Container(
       height: 200,
       width: 200,
@@ -928,21 +1214,23 @@ class _EditUserScreenState extends State<EditUserScreen> {
                             ],
                           ),
                           const SizedBox(height: 30),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          Stack(
                             children: [
-                              Expanded(
-                                flex: 3,
-                                child: Container(
-                                  padding: const EdgeInsets.all(24),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
-                                    color: Colors.white,
-                                  ),
-                                  child: Form(
-                                    key: _formKey,
-                                    child: Column(
-                                      children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    flex: 3,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(24),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(8),
+                                        color: Colors.white,
+                                      ),
+                                      child: Form(
+                                        key: _formKey,
+                                        child: Column(
+                                          children: [
                                         Row(
                                           children: [
                                             Expanded(
@@ -1162,7 +1450,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                             ),
                                             const SizedBox(width: 10),
                                             Expanded(
-                                              child: _buildTextField(
+                                              child: _buildTimerTextField(
                                                 label: "User Total Post Timer",
                                                 controller:
                                                 _userTotalPostsTimeController,
@@ -1298,45 +1586,52 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                             ),
                                           ],
                                         ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 24),
+                                  Expanded(
+                                    flex: 1,
+                                    child: Column(
+                                      children: [
+                                        ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          child: _buildImagePreview(),
+                                        ),
+                                        const SizedBox(height: 12),
+                                        // OutlinedButton.icon(
+                                        //   onPressed: _isLoading ? null : _pickImage,
+                                        //   icon: SvgPicture.asset(
+                                        //     "images/ic_farm_upload_photo.svg",
+                                        //     width: 20,
+                                        //     height: 20,
+                                        //     colorFilter: ColorFilter.mode(
+                                        //       _isLoading
+                                        //           ? Colors.grey
+                                        //           : Colors.black,
+                                        //       BlendMode.srcIn,
+                                        //     ),
+                                        //   ),
+                                        //   label: const Text("CHANGE PHOTO"),
+                                        //   style: OutlinedButton.styleFrom(
+                                        //     padding: const EdgeInsets.symmetric(
+                                        //         horizontal: 16, vertical: 12),
+                                        //     side: const BorderSide(
+                                        //         color: Colors.black54),
+                                        //   ),
+                                        // )
                                       ],
                                     ),
                                   ),
-                                ),
+                                ],
                               ),
-                              const SizedBox(width: 24),
-                              Expanded(
-                                flex: 1,
-                                child: Column(
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: _buildImagePreview(),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    // OutlinedButton.icon(
-                                    //   onPressed: _isLoading ? null : _pickImage,
-                                    //   icon: SvgPicture.asset(
-                                    //     "images/ic_farm_upload_photo.svg",
-                                    //     width: 20,
-                                    //     height: 20,
-                                    //     colorFilter: ColorFilter.mode(
-                                    //       _isLoading
-                                    //           ? Colors.grey
-                                    //           : Colors.black,
-                                    //       BlendMode.srcIn,
-                                    //     ),
-                                    //   ),
-                                    //   label: const Text("CHANGE PHOTO"),
-                                    //   style: OutlinedButton.styleFrom(
-                                    //     padding: const EdgeInsets.symmetric(
-                                    //         horizontal: 16, vertical: 12),
-                                    //     side: const BorderSide(
-                                    //         color: Colors.black54),
-                                    //   ),
-                                    // )
-                                  ],
+                              if (_isLoading)
+                                const Positioned.fill(
+                                  child: LoadingOverlay(),
                                 ),
-                              ),
                             ],
                           ),
                         ],

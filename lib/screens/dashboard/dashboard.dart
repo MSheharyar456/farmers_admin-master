@@ -12,6 +12,7 @@ import 'package:farmers_admin/screens/user_management/deleted_users_screen.dart'
 import 'package:farmers_admin/screens/working_status/working_status_screen.dart';
 import 'package:farmers_admin/services/admin_post_service.dart';
 import 'package:farmers_admin/user_feedback/user_feedback_screen.dart';
+import 'package:farmers_admin/widgets/loading_overlay.dart';
 import 'package:farmers_admin/widgets/delete_dialog.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
 import 'package:provider/provider.dart';
@@ -31,7 +32,6 @@ class DashboardScreen extends StatefulWidget {
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
-
 
 class ContentPage extends StatelessWidget {
   final String title;
@@ -67,7 +67,11 @@ class _DashboardContentState extends State<DashboardContent> {
     final service = context.read<AdminPostService>();
     try {
       // Always bypass cache to get fresh data
-      final rows = await service.getPosts(limit: 500, approved: 0, bypassCache: true);
+      final rows = await service.getPosts(
+        limit: 500,
+        approved: 0,
+        bypassCache: true,
+      );
       if (!mounted) return;
       setState(() => _posts = service.postsFromRows(rows));
     } catch (_) {
@@ -119,11 +123,15 @@ class _DashboardContentState extends State<DashboardContent> {
                   // Summary cards from backend stats
                   Consumer<DashboardViewModel>(
                     builder: (context, vm, _) {
-                      if (vm.isLoading && vm.stats.totalUsers == 0 && vm.stats.totalPosts == 0) {
+                      if (vm.isLoading &&
+                          vm.stats.totalUsers == 0 &&
+                          vm.stats.totalPosts == 0) {
                         return const Center(
                           child: Padding(
                             padding: EdgeInsets.all(24.0),
-                            child: CircularProgressIndicator(color: Colors.green),
+                            child: CircularProgressIndicator(
+                              color: Colors.green,
+                            ),
                           ),
                         );
                       }
@@ -148,41 +156,43 @@ class _DashboardContentState extends State<DashboardContent> {
                           value: '${stats.cancelledPosts}',
                           percentage: '',
                           isPositive: false,
-                          backgroundColor: appColors.cardBackgroundColor2!,
+                          backgroundColor: appColors.cardBackgroundColor!,
                         ),
                         SummaryCard(
                           title: 'Total Users',
                           value: '${stats.totalUsers}',
                           percentage: '',
                           isPositive: false,
-                          backgroundColor: appColors.cardBackgroundColor!,
+                          backgroundColor: appColors.cardBackgroundColor2!,
                         ),
                         SummaryCard(
                           title: 'Sold Posts',
                           value: '${stats.soldPosts}',
                           percentage: '',
                           isPositive: true,
-                          backgroundColor: appColors.cardBackgroundColor2!,
+                          backgroundColor: appColors.cardBackgroundColor!,
                         ),
                         // Clickable Deleted Users Card
                         GestureDetector(
                           onTap: () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (context) => const DeletedUsersScreen(),
+                                builder: (context) =>
+                                    const DeletedUsersScreen(),
                               ),
                             );
                           },
+
                           child: Container(
                             margin: const EdgeInsets.symmetric(horizontal: 8),
                             child: SummaryCard(
                               title: 'Deleted Users',
                               value: '${stats.deletedUsersCount}',
-                              percentage: 'Pending',
+                              percentage: '',
                               isPositive: false,
                               backgroundColor: stats.deletedUsersCount > 0
                                   ? Colors.orange[100]!
-                                  : appColors.cardBackgroundColor!,
+                                  : appColors.cardBackgroundColor2!,
                             ),
                           ),
                         ),
@@ -201,7 +211,9 @@ class _DashboardContentState extends State<DashboardContent> {
                               children: cards.map((card) {
                                 return Expanded(
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 0.0),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 0.0,
+                                    ),
                                     child: card,
                                   ),
                                 );
@@ -375,7 +387,9 @@ class _RequestsGridState extends State<RequestsGrid> {
 
   Stream<List<Post>>? _pendingPostsLiveStream;
 
-  Stream<List<Post>> _createPendingPostsLiveStream(BuildContext context) async* {
+  Stream<List<Post>> _createPendingPostsLiveStream(
+    BuildContext context,
+  ) async* {
     // Emit current list immediately so UI doesn't flash/reload.
     yield List<Post>.from(_allPendingPosts);
 
@@ -385,7 +399,11 @@ class _RequestsGridState extends State<RequestsGrid> {
       try {
         final service = context.read<AdminPostService>();
         // Always bypass cache to get fresh data (important after approval)
-        final rows = await service.getPosts(limit: 500, approved: 0, bypassCache: true);
+        final rows = await service.getPosts(
+          limit: 500,
+          approved: 0,
+          bypassCache: true,
+        );
         final list = service.postsFromRows(rows);
         yield list;
       } catch (_) {
@@ -403,7 +421,11 @@ class _RequestsGridState extends State<RequestsGrid> {
     final service = context.read<AdminPostService>();
     try {
       // Always bypass cache to get fresh data
-      final rows = await service.getPosts(limit: 500, approved: 0, bypassCache: true);
+      final rows = await service.getPosts(
+        limit: 500,
+        approved: 0,
+        bypassCache: true,
+      );
       if (!mounted) return;
       setState(() {
         _allPendingPosts.clear();
@@ -462,7 +484,9 @@ class _RequestsGridState extends State<RequestsGrid> {
     return filtered;
   }
 
-  int get totalPages => _filteredPosts.isEmpty ? 0 : (_filteredPosts.length / _rowsPerPage).ceil();
+  int get totalPages => _filteredPosts.isEmpty
+      ? 0
+      : (_filteredPosts.length / _rowsPerPage).ceil();
 
   List<Post> get _paginatedPosts {
     final startIndex = (_currentPage - 1) * _rowsPerPage;
@@ -486,7 +510,9 @@ class _RequestsGridState extends State<RequestsGrid> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _pendingPostsLiveStream ??= _createPendingPostsLiveStream(context).asBroadcastStream();
+    _pendingPostsLiveStream ??= _createPendingPostsLiveStream(
+      context,
+    ).asBroadcastStream();
   }
 
   Future<void> _loadPermissions() async {
@@ -630,7 +656,8 @@ class _RequestsGridState extends State<RequestsGrid> {
                           ),
                         );
                         // Edit screen sometimes returns 'success' and sometimes returns true.
-                        if ((result == 'success' || result == true) && mounted) {
+                        if ((result == 'success' || result == true) &&
+                            mounted) {
                           _removePendingPostLocally(postId?.toString() ?? '');
                           // Also refresh from server immediately to ensure consistency
                           _loadPendingPosts();
@@ -671,7 +698,9 @@ class _RequestsGridState extends State<RequestsGrid> {
                         message:
                             "Are you sure you want to delete this pending request?",
                         onConfirm: () async {
-                          await context.read<AdminPostService>().deletePost(postId as String);
+                          await context.read<AdminPostService>().deletePost(
+                            postId as String,
+                          );
                           if (mounted) _loadPendingPosts();
                         },
                       );
@@ -1046,171 +1075,154 @@ class _RequestsGridState extends State<RequestsGrid> {
         final isTablet = screenWidth >= 768 && screenWidth < 1024;
 
         if (_isInitialLoad) {
-          return const Center(
-            child: CircularProgressIndicator(color: Colors.green),
+          return Container(
+            height: _isInitialLoad
+                ? 300
+                : (_paginatedPosts.length * rowHeight) + headerHeight,
+
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: LoadingOverlay(text: 'Loading...', showBackdrop: false),
           );
         }
 
         if (_allPendingPosts.isEmpty && _filteredPosts.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Image.asset(
-                  'images/image_farm_nothing_remains.png',
-                  height: 150,
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  "No pending requests available",
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+          return SizedBox(
+            height: 300,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Image.asset(
+                    'images/image_farm_nothing_remains.png',
+                    height: 150,
                   ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  "Pending requests will appear here",
-                  style: TextStyle(fontSize: 16, color: Colors.grey),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+                  const SizedBox(height: 24),
+                  const Text(
+                    "No pending requests available",
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    "Pending requests will appear here",
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
           );
         }
 
         if (_filteredPosts.isEmpty) {
-              return Column(
-                children: [
-                  // Show filters even when no results
-                  _buildFilterSection(isMobile, isTablet),
-                  const SizedBox(height: 20),
-                  Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const SizedBox(height: 10),
-                        Image.asset(
-                          'images/image_farm_nothing_remains.png',
-                          height: 150,
+          return Column(
+            children: [
+              // Show filters even when no results
+              _buildFilterSection(isMobile, isTablet),
+              const SizedBox(height: 20),
+              SizedBox(
+                height: 250,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const SizedBox(height: 10),
+                      Image.asset(
+                        'images/image_farm_nothing_remains.png',
+                        height: 150,
+                      ),
+                      const SizedBox(height: 24),
+                      if (_allPendingPosts.isEmpty) ...[
+                        const Text(
+                          "No pending requests available",
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                          textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 24),
-                        if (_allPendingPosts.isEmpty) ...[
-                          const Text(
-                            "No pending requests available",
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                            textAlign: TextAlign.center,
+                        const SizedBox(height: 8),
+                        const Text(
+                          "Pending requests will appear here",
+                          style: TextStyle(fontSize: 14, color: Colors.grey),
+                          textAlign: TextAlign.center,
+                        ),
+                      ] else ...[
+                        Text(
+                          "You're all caught up!",
+                          style: TextStyle(
+                            fontSize: isMobile ? 14 : 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
                           ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            "Pending requests will appear here",
-                            style: TextStyle(fontSize: 16, color: Colors.grey),
-                            textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          "No pending requests found matching filters",
+                          style: TextStyle(
+                            fontSize: isMobile ? 14 : 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
                           ),
-                        ] else ...[
-                          Text(
-                            "You're all caught up!",
-                            style: TextStyle(
-                              fontSize: isMobile ? 14 : 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            "No pending requests found matching filters",
-                            style: TextStyle(
-                              fontSize: isMobile ? 14 : 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 10),
+                        ),
                       ],
-                    ),
+                      const SizedBox(height: 10),
+                    ],
                   ),
-                ],
-              );
-            }
+                ),
+              ),
+            ],
+          );
+        }
 
-            final actualRowCount = _paginatedPosts.length;
-            final gridHeight = (actualRowCount * rowHeight) + headerHeight;
+        final actualRowCount = _paginatedPosts.length;
+        final gridHeight = (actualRowCount * rowHeight) + headerHeight;
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 🔹 Filter Section
-                _buildFilterSection(isMobile, isTablet),
-                const SizedBox(height: 5),
-                // Grid
-                SizedBox(
-                  height: gridHeight,
-                  child: StreamBuilder<List<Post>>(
-                    stream: _pendingPostsLiveStream,
-                    initialData: List<Post>.from(_allPendingPosts),
-                    builder: (context, snapshot) {
-                      final latest = snapshot.data;
-                      if (latest != null) {
-                        // Update in-memory list and redraw grid without a "reload" experience.
-                        _allPendingPosts
-                          ..clear()
-                          ..addAll(latest);
-                        _isInitialLoad = false;
-                        if (_isGridLoaded) {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted) _updatePlutoGridRows();
-                          });
-                        }
-                      }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 🔹 Filter Section
+            _buildFilterSection(isMobile, isTablet),
+            const SizedBox(height: 5),
+            // Grid
+            SizedBox(
+              height: gridHeight,
+              child: StreamBuilder<List<Post>>(
+                stream: _pendingPostsLiveStream,
+                initialData: List<Post>.from(_allPendingPosts),
+                builder: (context, snapshot) {
+                  final latest = snapshot.data;
+                  if (latest != null) {
+                    // Update in-memory list and redraw grid without a "reload" experience.
+                    _allPendingPosts
+                      ..clear()
+                      ..addAll(latest);
+                    _isInitialLoad = false;
+                    if (_isGridLoaded) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) _updatePlutoGridRows();
+                      });
+                    }
+                  }
 
-                      return isSmallScreen
-                          ? SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: SizedBox(
-                                width: columns.fold<double>(
-                                  0,
-                                  (sum, col) =>
-                                      sum + (col.width ?? col.minWidth ?? 120),
-                                ),
-                                child: PlutoGrid(
-                                  columns: columns,
-                                  rows: [],
-                                  onLoaded: (event) {
-                                    stateManager = event.stateManager;
-                                    setState(() => _isGridLoaded = true);
-                                    _updatePlutoGridRows();
-                                  },
-                                  configuration: PlutoGridConfiguration(
-                                    columnSize: const PlutoGridColumnSizeConfig(
-                                      autoSizeMode: PlutoAutoSizeMode.none,
-                                    ),
-                                    style: PlutoGridStyleConfig(
-                                      rowHeight: 40,
-                                      columnTextStyle: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                      ),
-                                      cellTextStyle:
-                                          const TextStyle(fontSize: 12),
-                                      enableColumnBorderHorizontal: true,
-                                      enableCellBorderHorizontal: true,
-                                      enableColumnBorderVertical: true,
-                                      enableRowColorAnimation: false,
-                                      oddRowColor: Colors.white,
-                                      evenRowColor: Colors.grey.shade50,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            )
-                          : PlutoGrid(
+                  return isSmallScreen
+                      ? SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: SizedBox(
+                            width: columns.fold<double>(
+                              0,
+                              (sum, col) =>
+                                  sum + (col.width ?? col.minWidth ?? 120),
+                            ),
+                            child: PlutoGrid(
                               columns: columns,
                               rows: [],
                               onLoaded: (event) {
@@ -1220,7 +1232,7 @@ class _RequestsGridState extends State<RequestsGrid> {
                               },
                               configuration: PlutoGridConfiguration(
                                 columnSize: const PlutoGridColumnSizeConfig(
-                                  autoSizeMode: PlutoAutoSizeMode.scale,
+                                  autoSizeMode: PlutoAutoSizeMode.none,
                                 ),
                                 style: PlutoGridStyleConfig(
                                   rowHeight: 40,
@@ -1228,8 +1240,7 @@ class _RequestsGridState extends State<RequestsGrid> {
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12,
                                   ),
-                                  cellTextStyle:
-                                      const TextStyle(fontSize: 12),
+                                  cellTextStyle: const TextStyle(fontSize: 12),
                                   enableColumnBorderHorizontal: true,
                                   enableCellBorderHorizontal: true,
                                   enableColumnBorderVertical: true,
@@ -1238,141 +1249,66 @@ class _RequestsGridState extends State<RequestsGrid> {
                                   evenRowColor: Colors.grey.shade50,
                                 ),
                               ),
-                            );
-                    },
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                // Pagination
-                Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.symmetric(
-                    vertical: isMobile ? 12 : 0,
-                    horizontal: isMobile ? 4 : 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(5),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.05),
-                        blurRadius: 5,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: isMobile
-                      ? Column(
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.arrow_back_ios_new,
-                                    size: 14,
-                                    color: Colors.grey,
-                                  ),
-                                  onPressed: _currentPage > 1
-                                      ? () {
-                                          setState(() {
-                                            _currentPage--;
-                                            _updatePlutoGridRows();
-                                          });
-                                        }
-                                      : null,
-                                ),
-                                Text(
-                                  '$_currentPage / $totalPages',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.arrow_forward_ios,
-                                    size: 14,
-                                    color: Colors.grey,
-                                  ),
-                                  onPressed: _currentPage < totalPages
-                                      ? () {
-                                          setState(() {
-                                            _currentPage++;
-                                            _updatePlutoGridRows();
-                                          });
-                                        }
-                                      : null,
-                                ),
-                              ],
                             ),
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Container(
-                                  height: 34,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: Colors.grey.shade300,
-                                    ),
-                                    borderRadius: BorderRadius.circular(5),
-                                    color: Colors.white,
-                                  ),
-                                  child: DropdownButtonHideUnderline(
-                                    child: DropdownButton<int>(
-                                      value: _rowsPerPage,
-                                      dropdownColor: Colors.white,
-                                      icon: const Icon(
-                                        Icons.keyboard_arrow_down,
-                                        size: 14,
-                                      ),
-                                      items: [5, 10, 20, 50]
-                                          .map(
-                                            (e) => DropdownMenuItem(
-                                              value: e,
-                                              child: Text(
-                                                '$e',
-                                                style: TextStyle(fontSize: 12),
-                                              ),
-                                            ),
-                                          )
-                                          .toList(),
-                                      onChanged: (val) {
-                                        if (val != null) {
-                                          setState(() {
-                                            _rowsPerPage = val;
-                                            _currentPage = 1;
-                                            _updatePlutoGridRows();
-                                          });
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                const Text(
-                                  "/ Page",
-                                  style: TextStyle(
-                                    color: Colors.black54,
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                          ),
                         )
-                      : Wrap(
-                          alignment: WrapAlignment.start,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: 8,
-                          runSpacing: 8,
+                      : PlutoGrid(
+                          columns: columns,
+                          rows: [],
+                          onLoaded: (event) {
+                            stateManager = event.stateManager;
+                            setState(() => _isGridLoaded = true);
+                            _updatePlutoGridRows();
+                          },
+                          configuration: PlutoGridConfiguration(
+                            columnSize: const PlutoGridColumnSizeConfig(
+                              autoSizeMode: PlutoAutoSizeMode.scale,
+                            ),
+                            style: PlutoGridStyleConfig(
+                              rowHeight: 40,
+                              columnTextStyle: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                              cellTextStyle: const TextStyle(fontSize: 12),
+                              enableColumnBorderHorizontal: true,
+                              enableCellBorderHorizontal: true,
+                              enableColumnBorderVertical: true,
+                              enableRowColorAnimation: false,
+                              oddRowColor: Colors.white,
+                              evenRowColor: Colors.grey.shade50,
+                            ),
+                          ),
+                        );
+                },
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            // Pagination
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(
+                vertical: isMobile ? 12 : 0,
+                horizontal: isMobile ? 4 : 8,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.05),
+                    blurRadius: 5,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: isMobile
+                  ? Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             IconButton(
                               icon: const Icon(
@@ -1389,63 +1325,13 @@ class _RequestsGridState extends State<RequestsGrid> {
                                     }
                                   : null,
                             ),
-                            ...List.generate(totalPages > 7 ? 7 : totalPages, (
-                              index,
-                            ) {
-                              int pageNum;
-                              if (totalPages <= 7) {
-                                pageNum = index + 1;
-                              } else {
-                                if (_currentPage <= 4) {
-                                  pageNum = index + 1;
-                                } else if (_currentPage >= totalPages - 3) {
-                                  pageNum = totalPages - 6 + index;
-                                } else {
-                                  pageNum = _currentPage - 3 + index;
-                                }
-                              }
-
-                              final isActive = pageNum == _currentPage;
-
-                              return GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _currentPage = pageNum;
-                                    _updatePlutoGridRows();
-                                  });
-                                },
-                                child: Container(
-                                  margin: const EdgeInsets.symmetric(
-                                    horizontal: 2,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 5,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isActive
-                                        ? const Color(0xFFE8F5E9)
-                                        : Colors.white,
-                                    border: Border.all(
-                                      color: isActive
-                                          ? const Color(0xFF4CAF50)
-                                          : Colors.grey.shade300,
-                                    ),
-                                    borderRadius: BorderRadius.circular(5),
-                                  ),
-                                  child: Text(
-                                    '$pageNum',
-                                    style: TextStyle(
-                                      color: isActive
-                                          ? const Color(0xFF4CAF50)
-                                          : Colors.black87,
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            }),
+                            Text(
+                              '$_currentPage / $totalPages',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                                fontSize: 12,
+                              ),
+                            ),
                             IconButton(
                               icon: const Icon(
                                 Icons.arrow_forward_ios,
@@ -1461,68 +1347,217 @@ class _RequestsGridState extends State<RequestsGrid> {
                                     }
                                   : null,
                             ),
-                            const SizedBox(width: 12),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  height: 34,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              height: 34,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(5),
+                                color: Colors.white,
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<int>(
+                                  value: _rowsPerPage,
+                                  dropdownColor: Colors.white,
+                                  icon: const Icon(
+                                    Icons.keyboard_arrow_down,
+                                    size: 14,
                                   ),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: Colors.grey.shade300,
-                                    ),
-                                    borderRadius: BorderRadius.circular(5),
-                                    color: Colors.white,
-                                  ),
-                                  child: DropdownButtonHideUnderline(
-                                    child: DropdownButton<int>(
-                                      value: _rowsPerPage,
-                                      icon: const Icon(
-                                        Icons.keyboard_arrow_down,
-                                        size: 14,
-                                      ),
-                                      items: [5, 10, 20, 50]
-                                          .map(
-                                            (e) => DropdownMenuItem(
-                                              value: e,
-                                              child: Text(
-                                                "$e",
-                                                style: TextStyle(fontSize: 12),
-                                              ),
-                                            ),
-                                          )
-                                          .toList(),
-                                      onChanged: (val) {
-                                        if (val != null) {
-                                          setState(() {
-                                            _rowsPerPage = val;
-                                            _currentPage = 1;
-                                            _updatePlutoGridRows();
-                                          });
-                                        }
-                                      },
-                                    ),
-                                  ),
+                                  items: [5, 10, 20, 50]
+                                      .map(
+                                        (e) => DropdownMenuItem(
+                                          value: e,
+                                          child: Text(
+                                            '$e',
+                                            style: TextStyle(fontSize: 12),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      setState(() {
+                                        _rowsPerPage = val;
+                                        _currentPage = 1;
+                                        _updatePlutoGridRows();
+                                      });
+                                    }
+                                  },
                                 ),
-                                const SizedBox(width: 6),
-                                const Text(
-                                  "/ Page",
-                                  style: TextStyle(
-                                    color: Colors.black54,
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text(
+                              "/ Page",
+                              style: TextStyle(
+                                color: Colors.black54,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 12,
+                              ),
                             ),
                           ],
                         ),
-                ),
-              ],
-            );
+                      ],
+                    )
+                  : Wrap(
+                      alignment: WrapAlignment.start,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.arrow_back_ios_new,
+                            size: 14,
+                            color: Colors.grey,
+                          ),
+                          onPressed: _currentPage > 1
+                              ? () {
+                                  setState(() {
+                                    _currentPage--;
+                                    _updatePlutoGridRows();
+                                  });
+                                }
+                              : null,
+                        ),
+                        ...List.generate(totalPages > 7 ? 7 : totalPages, (
+                          index,
+                        ) {
+                          int pageNum;
+                          if (totalPages <= 7) {
+                            pageNum = index + 1;
+                          } else {
+                            if (_currentPage <= 4) {
+                              pageNum = index + 1;
+                            } else if (_currentPage >= totalPages - 3) {
+                              pageNum = totalPages - 6 + index;
+                            } else {
+                              pageNum = _currentPage - 3 + index;
+                            }
+                          }
+
+                          final isActive = pageNum == _currentPage;
+
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _currentPage = pageNum;
+                                _updatePlutoGridRows();
+                              });
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isActive
+                                    ? const Color(0xFFE8F5E9)
+                                    : Colors.white,
+                                border: Border.all(
+                                  color: isActive
+                                      ? const Color(0xFF4CAF50)
+                                      : Colors.grey.shade300,
+                                ),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Text(
+                                '$pageNum',
+                                style: TextStyle(
+                                  color: isActive
+                                      ? const Color(0xFF4CAF50)
+                                      : Colors.black87,
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.arrow_forward_ios,
+                            size: 14,
+                            color: Colors.grey,
+                          ),
+                          onPressed: _currentPage < totalPages
+                              ? () {
+                                  setState(() {
+                                    _currentPage++;
+                                    _updatePlutoGridRows();
+                                  });
+                                }
+                              : null,
+                        ),
+                        const SizedBox(width: 12),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              height: 34,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(5),
+                                color: Colors.white,
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<int>(
+                                  value: _rowsPerPage,
+                                  icon: const Icon(
+                                    Icons.keyboard_arrow_down,
+                                    size: 14,
+                                  ),
+                                  items: [5, 10, 20, 50]
+                                      .map(
+                                        (e) => DropdownMenuItem(
+                                          value: e,
+                                          child: Text(
+                                            "$e",
+                                            style: TextStyle(fontSize: 12),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      setState(() {
+                                        _rowsPerPage = val;
+                                        _currentPage = 1;
+                                        _updatePlutoGridRows();
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text(
+                              "/ Page",
+                              style: TextStyle(
+                                color: Colors.black54,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        );
       },
     );
   }

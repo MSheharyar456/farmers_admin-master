@@ -9,6 +9,7 @@ import 'package:farmers_admin/models/post_model.dart';
 import 'package:farmers_admin/services/admin_post_service.dart';
 import 'package:farmers_admin/widgets/cancel_request.dart';
 import 'package:farmers_admin/widgets/expiry_countdown_timer.dart';
+import 'package:farmers_admin/widgets/loading_overlay.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -65,6 +66,7 @@ class _EditPostContentState extends State<EditPostContent> {
       'leafyGreen': 'Leafy Green',
       'byKg': 'By KG',
       'byBox': 'By Box',
+      'byUnit': 'By Unit',
       // Service types for Delivery/Equipments (backend values)
       'delivered': 'Delivery',
       'sold': 'Sell',
@@ -462,15 +464,35 @@ class _EditPostContentState extends State<EditPostContent> {
         ? post.postCategory
         : null;
 
-    // Initialize category-specific dropdowns with safe defaults
-    _gender = post.postGender ?? "male";
-    _weightCategory = post.postWeightCategory ?? "byKg";
-    _liveStockCategory = post.postLiveStockCategory ?? "cow";
+    // Initialize category-specific dropdowns with safe defaults and sanitization
+    final rawGender = (post.postGender ?? "male").toLowerCase().trim();
+    _gender = (rawGender == "male" || rawGender == "female")
+        ? rawGender
+        : "male";
+
+    final rawWeightCat = post.postWeightCategory;
+    _weightCategory =
+        (rawWeightCat == "byKg" ||
+            rawWeightCat == "byBox" ||
+            rawWeightCat == "byUnit")
+        ? rawWeightCat!
+        : "byKg";
+
+    final rawLiveStock = (post.postLiveStockCategory ?? "cow")
+        .toLowerCase()
+        .trim();
+    _liveStockCategory =
+        (rawLiveStock == "cow" ||
+            rawLiveStock == "goat" ||
+            rawLiveStock == "chicken")
+        ? rawLiveStock
+        : "cow";
+
     _serviceType = _normalizeServiceTypeForCategory(
       post.postCategory,
       post.postServiceType,
     );
-    _quantityUnit = post.postWeightCategory ?? "SelectedCategory";
+    _quantityUnit = _weightCategory;
     _isCancelled = post.postCancelApproved ?? false;
 
     // Initialize boolean fields
@@ -958,13 +980,13 @@ class _EditPostContentState extends State<EditPostContent> {
       // Base post data
       Map<String, dynamic> postData = {
         "postCancelApproved": _isCancelled,
-        "postTitle": _titleController.text.trim(),
-        "postCity": _cityController.text.trim(),
-        "postVillage": _villageController.text.trim(),
-        "postPrice": double.tryParse(_priceController.text.trim()) ?? 0,
-        "postUserLocation": _locationController.text.trim(),
-        "postAdditionalDetails": _additionalDetailsController.text.trim(),
-        "postCategory": _category ?? "others",
+        // "postTitle": _titleController.text.trim(),
+        // "postCity": _cityController.text.trim(),
+        // "postVillage": _villageController.text.trim(),
+        // "postPrice": double.tryParse(_priceController.text.trim()) ?? 0,
+        // "postUserLocation": _locationController.text.trim(),
+        // "postAdditionalDetails": _additionalDetailsController.text.trim(),
+        // "postCategory": _category ?? "others",
         "postIsApproved": _isApproved,
         "postIsFeatured": _isFeatured,
         "postIsHomePost": _isHomePost,
@@ -975,11 +997,11 @@ class _EditPostContentState extends State<EditPostContent> {
         "postUserVerified": _userVerified,
 
         // User information fields
-        "postUserContact": _userContactController.text.trim(),
-        "postUserId": _userIdController.text.trim(),
-        "postUserImage": _userImageController.text.trim(),
-        "postUserMail": _userMailController.text.trim(),
-        "postUserName": _userNameController.text.trim(),
+        // "postUserContact": _userContactController.text.trim(),
+        // "postUserId": _userIdController.text.trim(),
+        // "postUserImage": _userImageController.text.trim(),
+        // "postUserMail": _userMailController.text.trim(),
+        // "postUserName": _userNameController.text.trim(),
         "postViews": int.tryParse(_viewsController.text.trim()) ?? 0,
 
         // NEW: Add new fields to postData
@@ -1051,102 +1073,108 @@ class _EditPostContentState extends State<EditPostContent> {
         '  postPutTopTime: ${postData["postPutTopTime"]}, expiry: ${postData["postIsPutTopExpiry"]}',
       );
 
-      // Add category-specific fields based on organized groups
-      switch (_category) {
-        case "fruits":
-        case "vegetables":
-        case "jam":
-        case "pomegranate":
-        case "apples":
-        case "honey":
-          if (_weightCategory == "byKg") {
-            if (_averageWeightController.text.isNotEmpty) {
-              postData["postAverageWeight"] =
-                  double.tryParse(_averageWeightController.text) ?? 0;
-            }
-          } else {
-            if (_quantityController.text.isNotEmpty) {
-              postData["postQuantity"] =
-                  double.tryParse(_quantityController.text) ?? 0;
-            }
-          }
-          postData["postWeightCategory"] = _weightCategory;
-          break;
+      // // Add category-specific fields based on organized groups
+      // switch (_category) {
+      //   case "fruits":
+      //   case "vegetables":
+      //   case "pomegranate":
+      //   case "apples":
+      //     if (_weightCategory == "byKg") {
+      //       if (_averageWeightController.text.isNotEmpty) {
+      //         postData["postAverageWeight"] =
+      //             double.tryParse(_averageWeightController.text) ?? 0;
+      //       }
+      //     } else {
+      //       if (_quantityController.text.isNotEmpty) {
+      //         postData["postQuantity"] =
+      //             double.tryParse(_quantityController.text) ?? 0;
+      //       }
+      //     }
+      //     postData["postWeightCategory"] = _weightCategory;
+      //     break;
 
-        case "grain_seeds":
-        case "fertilizers":
-        case "animalsFeed":
-        case "cheese":
-        case "leafyGreen":
-          if (_averageWeightController.text.isNotEmpty) {
-            postData["postAverageWeight"] =
-                double.tryParse(_averageWeightController.text) ?? 0;
-          }
-          break;
+      //   case "grain_seeds":
+      //   case "fertilizers":
+      //   case "animalsFeed":
+      //   case "cheese":
+      //   case "leafyGreen":
+      //   case "honey":
+      //   case "jam":
+      //     if (_averageWeightController.text.isNotEmpty) {
+      //       postData["postAverageWeight"] =
+      //           double.tryParse(_averageWeightController.text) ?? 0;
+      //     }
+      //     break;
 
-        case "olive_oil":
-        case "pesticides":
-          if (_liquidQuantityController.text.isNotEmpty) {
-            postData["postLiquidQuantity"] =
-                double.tryParse(_liquidQuantityController.text) ?? 0;
-          }
-          postData["postWeightCategory"] = _quantityUnit;
-          break;
+      //   case "olive_oil":
+      //   case "pesticides":
+      //     if (_quantityController.text.isNotEmpty) {
+      //       postData["postQuantity"] =
+      //           double.tryParse(_quantityController.text) ?? 0;
+      //     }
+      //     postData["postWeightCategory"] = _quantityUnit;
+      //     break;
 
-        case "agriculturalTools":
-          if (_quantityController.text.isNotEmpty) {
-            postData["postQuantity"] =
-                double.tryParse(_quantityController.text) ?? 0;
-          }
-          postData["postServiceType"] = _serviceType;
-          break;
+      //   case "agriculturalTools":
+      //     if (_quantityController.text.isNotEmpty) {
+      //       postData["postQuantity"] =
+      //           double.tryParse(_quantityController.text) ?? 0;
+      //     }
+      //     postData["postServiceType"] = _serviceType;
+      //     break;
 
-        case "delivery":
-          postData["postServiceType"] = _serviceType;
-          break;
+      //   case "delivery":
+      //     postData["postServiceType"] = _serviceType;
+      //     break;
 
-        case "equipments":
-          if (_quantityController.text.isNotEmpty) {
-            postData["postQuantity"] =
-                double.tryParse(_quantityController.text) ?? 0;
-          }
-          postData["postServiceType"] = _serviceType;
-          break;
+      //   case "equipments":
+      //     if (_quantityController.text.isNotEmpty) {
+      //       postData["postQuantity"] =
+      //           double.tryParse(_quantityController.text) ?? 0;
+      //     }
+      //     postData["postServiceType"] = _serviceType;
+      //     break;
 
-        case "landServices":
-          postData["postServiceType"] = _serviceType;
-          if (_areaController.text.isNotEmpty) {
-            postData["postArea"] = double.tryParse(_areaController.text.trim());
-          }
-          break;
+      //   case "landServices":
+      //     postData["postServiceType"] = _serviceType;
+      //     if (_areaController.text.isNotEmpty) {
+      //       postData["postArea"] = double.tryParse(_areaController.text.trim());
+      //     }
+      //     break;
 
-        case "workerServices":
-          postData["postGender"] = _gender;
-          postData["postQuantity"] = double.tryParse(
-            _quantityController.text.trim(),
-          );
-          postData["postAge"] = double.tryParse(_ageController.text.trim());
-          break;
+      //   case "workerServices":
+      //     postData["postGender"] = _gender;
+      //     postData["postQuantity"] = double.tryParse(
+      //       _quantityController.text.trim(),
+      //     );
+      //     postData["postAge"] = double.tryParse(_ageController.text.trim());
+      //     break;
 
-        case "irrigation":
-          if (_areaController.text.isNotEmpty) {
-            postData["postArea"] = double.tryParse(_areaController.text.trim());
-          }
-          postData["postServiceType"] = _serviceType;
-          break;
+      //   case "irrigation":
+      //     if (_areaController.text.isNotEmpty) {
+      //       postData["postArea"] = double.tryParse(_areaController.text.trim());
+      //     }
+      //     break;
 
-        case "live_stock":
-          postData["postLiveStockCategory"] = _liveStockCategory;
-          if (_quantityController.text.isNotEmpty) {
-            postData["postQuantity"] =
-                double.tryParse(_quantityController.text) ?? 0;
-          }
-          postData["postGender"] = _gender;
-          if (_ageController.text.isNotEmpty) {
-            postData["postAge"] = double.tryParse(_ageController.text) ?? 0;
-          }
-          break;
-      }
+      //   case "live_stock":
+      //     postData["postLiveStockCategory"] = _liveStockCategory;
+      //     if (_quantityController.text.isNotEmpty) {
+      //       postData["postQuantity"] =
+      //           double.tryParse(_quantityController.text) ?? 0;
+      //     }
+      //     postData["postGender"] = _gender;
+      //     if (_ageController.text.isNotEmpty) {
+      //       postData["postAge"] = double.tryParse(_ageController.text) ?? 0;
+      //     }
+      //     break;
+
+      //   case "others":
+      //     if (_quantityController.text.isNotEmpty) {
+      //       postData["postQuantity"] =
+      //           double.tryParse(_quantityController.text) ?? 0;
+      //     }
+      //     break;
+      // }
 
       // DEBUG: payload being sent
       debugPrint('[EditPost._updatePost] DEBUG request');
@@ -1456,6 +1484,7 @@ class _EditPostContentState extends State<EditPostContent> {
     required String value,
     required List<String> items,
     required void Function(String?) onChanged,
+    bool enabled = true,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1474,7 +1503,7 @@ class _EditPostContentState extends State<EditPostContent> {
           child: DropdownButtonFormField<String>(
             style: TextStyle(fontSize: 10),
             initialValue: value,
-            onChanged: _isLoading ? null : onChanged,
+            onChanged: (enabled && !_isLoading) ? onChanged : null,
             icon: const Icon(
               Icons.keyboard_arrow_down,
               size: 14,
@@ -1721,14 +1750,7 @@ class _EditPostContentState extends State<EditPostContent> {
 
     List<Widget> fields = [];
 
-    if ([
-      "fruits",
-      "vegetables",
-      "jam",
-      "pomegranate",
-      "apples",
-      "honey",
-    ].contains(_category)) {
+    if (["fruits", "vegetables", "pomegranate", "apples"].contains(_category)) {
       fields.addAll([
         Row(
           children: [
@@ -1753,8 +1775,9 @@ class _EditPostContentState extends State<EditPostContent> {
               child: _buildDropdownField(
                 label: "Weight Category*",
                 value: _weightCategory,
-                items: ["byKg", "byBox"],
+                items: ["byKg", "byBox", "byUnit"],
                 onChanged: (val) => setState(() => _weightCategory = val!),
+                enabled: false,
               ),
             ),
             const SizedBox(width: 16),
@@ -1768,6 +1791,8 @@ class _EditPostContentState extends State<EditPostContent> {
       "animalsFeed",
       "cheese",
       "leafyGreen",
+      "honey",
+      "jam",
     ].contains(_category)) {
       fields.addAll([
         Row(
@@ -1793,7 +1818,7 @@ class _EditPostContentState extends State<EditPostContent> {
           children: [
             Expanded(
               child: _buildTextField1(
-                controller: _liquidQuantityController,
+                controller: _quantityController,
                 label: "Quantity (Litre/Kg)*",
                 keyboardType: TextInputType.number,
                 validator: (v) => v!.isEmpty ? "Enter quantity" : null,
@@ -1817,6 +1842,7 @@ class _EditPostContentState extends State<EditPostContent> {
                 // Delivery: delivered | sold
                 items: ["delivered", "sold"],
                 onChanged: (val) => setState(() => _serviceType = val!),
+                enabled: false,
               ),
             ),
             const SizedBox(width: 16),
@@ -1847,6 +1873,7 @@ class _EditPostContentState extends State<EditPostContent> {
                     ? ["delivered", "sold"]
                     : ["sell", "rent"],
                 onChanged: (val) => setState(() => _serviceType = val!),
+                enabled: false,
               ),
             ),
             const SizedBox(width: 16),
@@ -1873,6 +1900,7 @@ class _EditPostContentState extends State<EditPostContent> {
                 value: _serviceType,
                 items: ["sell", "rent"],
                 onChanged: (val) => setState(() => _serviceType = val!),
+                enabled: false,
               ),
             ),
             const SizedBox(width: 16),
@@ -1908,10 +1936,11 @@ class _EditPostContentState extends State<EditPostContent> {
                 value: _gender,
                 items: ["male", "female"],
                 onChanged: (val) => setState(() => _gender = val!),
+                enabled: false,
               ),
             ),
             const SizedBox(width: 16),
-            const Expanded(child: SizedBox()),
+            // const Expanded(child: SizedBox()),
           ],
         ),
       ]);
@@ -1928,14 +1957,7 @@ class _EditPostContentState extends State<EditPostContent> {
               ),
             ),
             const SizedBox(width: 16),
-            Expanded(
-              child: _buildDropdownField(
-                label: "Service Type",
-                value: _serviceType,
-                items: ["sell", "install", "rent"],
-                onChanged: (val) => setState(() => _serviceType = val!),
-              ),
-            ),
+            const Expanded(child: SizedBox()),
             const SizedBox(width: 16),
             const Expanded(child: SizedBox()),
           ],
@@ -1951,6 +1973,7 @@ class _EditPostContentState extends State<EditPostContent> {
                 value: _liveStockCategory,
                 items: ["cow", "goat", "chicken"],
                 onChanged: (val) => setState(() => _liveStockCategory = val!),
+                enabled: false,
               ),
             ),
             const SizedBox(width: 16),
@@ -1960,6 +1983,7 @@ class _EditPostContentState extends State<EditPostContent> {
                 value: _gender,
                 items: ["male", "female"],
                 onChanged: (val) => setState(() => _gender = val!),
+                enabled: false,
               ),
             ),
             const SizedBox(width: 16),
@@ -1996,7 +2020,7 @@ class _EditPostContentState extends State<EditPostContent> {
           children: [
             Expanded(
               child: _buildTextField1(
-                controller: _liquidQuantityController,
+                controller: _quantityController,
                 label: "Quantity",
                 keyboardType: TextInputType.number,
               ),
@@ -2087,15 +2111,15 @@ class _EditPostContentState extends State<EditPostContent> {
       return url.startsWith('/') ? '$baseUrl$url' : '$base$url';
     }).toList();
     return Padding(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            "Images",
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 16),
+          // const Text(
+          //   "Images",
+          //   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          // ),
+          // const SizedBox(height: 16),
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -2240,7 +2264,7 @@ class _EditPostContentState extends State<EditPostContent> {
             crossAxisCount: 2, // Changed from 2 to 3 to accommodate 5 boxes
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
-            childAspectRatio: 1.8,
+            childAspectRatio: 1.85,
             children: [
               _buildExpiryCard(
                 label: "Colored Post",
@@ -3164,20 +3188,30 @@ class _EditPostContentState extends State<EditPostContent> {
                         ),
 
                         const SizedBox(height: 15),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        Stack(
                           children: [
-                            Expanded(flex: 3, child: _editPostForm()),
-                            Expanded(
-                              flex: 2,
-                              child: Column(
-                                children: [
-                                  _buildImageGallery(),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(flex: 3, child: _editPostForm()),
+                                Expanded(
+                                  flex: 2,
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildImageGallery(),
 
-                                  _buildExpirySection(),
-                                ],
-                              ),
+                                      _buildExpirySection(),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
+                            if (_isLoading)
+                              const Positioned.fill(
+                                child: LoadingOverlay(),
+                              ),
                           ],
                         ),
                       ],

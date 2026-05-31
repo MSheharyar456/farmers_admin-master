@@ -63,6 +63,25 @@ class UserRepository {
     await _dio.delete<Map<String, dynamic>>('/admin/users/$id');
   }
 
+  /// POST /admin/users (create user/admin account).
+  Future<UserModel> createUser(Map<String, dynamic> data) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/admin/users',
+      data: data,
+    );
+    final responseData = res.data;
+    if (responseData == null || responseData['success'] != true) {
+      throw Exception(responseData?['message'] ?? 'Failed to create user');
+    }
+    final userMap = responseData['user'];
+    if (userMap is Map) {
+      return UserModel.fromServerRow(Map<String, dynamic>.from(userMap as Map<dynamic, dynamic>));
+    }
+    throw Exception('User was created but response was invalid');
+  }
+
+  /// POST /admin/users/create-user (same create flow if backend response is shaped as raw row)
+
   /// POST /admin/users/bulk-delete (bulk hard delete).
   Future<Map<String, dynamic>> bulkDeleteUsers(List<String> userIds) async {
     final res = await _dio.post<Map<String, dynamic>>(

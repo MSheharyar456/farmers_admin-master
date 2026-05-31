@@ -142,6 +142,33 @@ class DeletedUsersApiService {
     }
   }
 
+  Future<Map<String, dynamic>> transferDeletedUserPosts({
+    required String userId,
+    required String targetUserId,
+  }) async {
+    final token = await _getToken();
+    if (token == null || token.isEmpty) {
+      throw Exception('Not authenticated. Please log in again.');
+    }
+
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/admin/deleted-users/$userId/transfer-posts',
+      data: {'targetUserId': targetUserId},
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer $token',
+          'X-Authorization': 'Bearer $token',
+        },
+      ),
+    );
+
+    final data = res.data;
+    if (data == null || data['success'] != true) {
+      throw Exception(data?['message'] ?? 'Failed to transfer posts');
+    }
+    return data;
+  }
+
   Future<int> getDeletedUsersCount() async {
     try {
       final token = await _getToken();

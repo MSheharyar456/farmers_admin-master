@@ -24,7 +24,7 @@ class UserScreenViewModel extends ChangeNotifier {
 
   List<UserModel> _allUsers = [];
   List<UserModel> _filteredUsers = [];
-  final bool _isLoading = false;
+  bool _isLoading = false;
   String? _errorMessage;
 
   // Getters
@@ -109,11 +109,16 @@ class UserScreenViewModel extends ChangeNotifier {
   /// Fetch users from backend and load into view model.
   Future<void> loadFromRepository() async {
     try {
+      _isLoading = true;
+      notifyListeners();
       _errorMessage = null;
       final users = await repository.getUsers(limit: 500);
       loadUsers(users);
     } catch (e) {
       _errorMessage = 'Failed to load users: ${e.toString()}';
+      notifyListeners();
+    } finally {
+      _isLoading = false;
       notifyListeners();
     }
   }

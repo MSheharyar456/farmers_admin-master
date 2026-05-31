@@ -11,6 +11,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
 import 'package:provider/provider.dart';
+import 'package:farmers_admin/widgets/loading_overlay.dart';
 
 class PostManagementScreen extends StatefulWidget {
   const PostManagementScreen({super.key});
@@ -373,7 +374,9 @@ class _PostContentState extends State<PostContent> {
                         title: "Delete Post",
                         message: "Are you sure you want to delete this post?",
                         onConfirm: () async {
-                          await context.read<AdminPostService>().deletePost(postId as String);
+                          await context.read<AdminPostService>().deletePost(
+                            postId as String,
+                          );
                           if (mounted) _loadPosts();
                         },
                       );
@@ -430,7 +433,11 @@ class _PostContentState extends State<PostContent> {
         approvedFilter = 0;
       }
       // If "All", approvedFilter stays null to fetch all posts
-      final rows = await service.getPosts(limit: 500, approved: approvedFilter, bypassCache: true);
+      final rows = await service.getPosts(
+        limit: 500,
+        approved: approvedFilter,
+        bypassCache: true,
+      );
       if (!mounted) return;
       setState(() {
         _posts = service.postsFromRows(rows);
@@ -819,7 +826,9 @@ class _PostContentState extends State<PostContent> {
                                   "Select Approval Status",
                                   style: TextStyle(fontSize: 12),
                                 ),
-                                items: ['All', 'Approved', 'Pending'].map((status) {
+                                items: ['All', 'Approved', 'Pending'].map((
+                                  status,
+                                ) {
                                   return DropdownMenuItem(
                                     value: status,
                                     child: Text(status),
@@ -849,7 +858,8 @@ class _PostContentState extends State<PostContent> {
                                       _searchQuery = _tempSearchQuery
                                           .toLowerCase();
                                       _selectedCategory = _tempSelectedCategory;
-                                      _selectedApproval = _tempSelectedApproval ?? "Approved";
+                                      _selectedApproval =
+                                          _tempSelectedApproval ?? "Approved";
                                       _currentPage = 1;
                                       // Reload posts when approval filter changes
                                       _loadPosts();
@@ -1038,7 +1048,9 @@ class _PostContentState extends State<PostContent> {
                                       "Approval Status",
                                       style: TextStyle(fontSize: 12),
                                     ),
-                                    items: ['All', 'Approved', 'Pending'].map((status) {
+                                    items: ['All', 'Approved', 'Pending'].map((
+                                      status,
+                                    ) {
                                       return DropdownMenuItem(
                                         value: status,
                                         child: Text(
@@ -1073,7 +1085,8 @@ class _PostContentState extends State<PostContent> {
                                       _searchQuery = _tempSearchQuery
                                           .toLowerCase();
                                       _selectedCategory = _tempSelectedCategory;
-                                      _selectedApproval = _tempSelectedApproval ?? "Approved";
+                                      _selectedApproval =
+                                          _tempSelectedApproval ?? "Approved";
                                       _currentPage = 1;
                                       // Reload posts when approval filter changes
                                       _loadPosts();
@@ -1116,12 +1129,18 @@ class _PostContentState extends State<PostContent> {
                     const SizedBox(height: 10),
 
                     // Grid Section
-                    SizedBox(
+                    Container(
+                      height: _isLoading
+                          ? 300
+                          : (_paginatedPosts.length * rowHeight) + headerHeight,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                       child: _isLoading
-                          ? const Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.green,
-                              ),
+                          ? const LoadingOverlay(
+                              text: 'Loading...',
+                              showBackdrop: false,
                             )
                           : _posts.isEmpty || _filteredPosts.isEmpty
                           ? _buildEmptyState()

@@ -48,8 +48,9 @@ class UserModel {
     final email = row['email']?.toString() ?? '';
     final username = row['username']?.toString() ?? 'N/A';
     // isVerified comes from is_subscribed (admin controlled)
-    final isVerified = row['isVerified'] == true || row['isVerified'] == 1;
-    final createdAt = row['createdAt'];
+    final isVerified =
+        row['isVerified'] == true || row['isVerified'] == 1 || row['is_subscribed'] == 1;
+    final createdAt = row['createdAt'] ?? row['created_at'];
     int loginDate = 0;
     if (createdAt != null) {
       if (createdAt is int) loginDate = createdAt;
@@ -66,10 +67,16 @@ class UserModel {
     final userPostLimitUsed = parseIntValue(row['userPostLimitUsed'], fallback: 0);
     final userUpdatePostLimit = parseIntValue(row['userUpdatePostLimit'], fallback: 0);
     final userFollowing = parseIntValue(row['userFollowing'], fallback: 0);
-    final userFollowerBoost = parseIntValue(row['userFollowerBoost'], fallback: 0);
+    final userFollowerBoost = parseIntValue(
+      row['userFollowerBoost'],
+      fallback: parseIntValue(row['manual_follower_boost'], fallback: 0),
+    );
     final actualFollowersCount = parseIntValue(row['actualFollowersCount'], fallback: 0);
-    final totalFollowersCount = parseIntValue(row['totalFollowersCount'], fallback: userFollowerBoost);
-    final userTotalPostsTime = parseIntValue(row['userTotalPostsTime'], fallback: 30);
+    final totalFollowersCount = parseIntValue(
+      row['totalFollowersCount'],
+      fallback: parseIntValue(row['followersCount'], fallback: userFollowerBoost),
+    );
+    final userTotalPostsTime = parseIntValue(row['userTotalPostsTime'], fallback: parseIntValue(row['post_limit_days'], fallback: 30));
     final completeData = Map<String, dynamic>.from(row);
     completeData['uid'] = id;
     completeData['userId'] = id;
@@ -86,8 +93,12 @@ class UserModel {
     completeData['totalFollowersCount'] = totalFollowersCount;
     completeData['userTotalPostsTime'] = userTotalPostsTime;
     completeData['userLoginDate'] = loginDate;
-    completeData['profileColor'] = row['profile_color'];
-    completeData['profileImage'] = row['profile_image'] ?? 'default_pfp.jpg';
+    final profileColor = row['profile_color'] ?? row['profileColor'];
+    final profileImage = row['profile_image'] ?? row['profileImage'] ?? 'default_pfp.jpg';
+    completeData['profileColor'] = profileColor;
+    completeData['profile_color'] = profileColor;
+    completeData['profileImage'] = profileImage;
+    completeData['profile_image'] = profileImage;
     return UserModel(
       uid: id,
       userName: username,
@@ -99,15 +110,15 @@ class UserModel {
       rawData: completeData,
       userLoginDate: loginDate,
       userFCMToken: null,
-      userContact: row['phoneComplete']?.toString(),
+      userContact: row['phoneComplete']?.toString() ?? row['phone_complete']?.toString(),
       userPostLimit: userPostLimit,
       userPostLimitUsed: userPostLimitUsed,
       userUpdatePostLimit: userUpdatePostLimit,
       userFollowing: userFollowing,
       userFollowerBoost: userFollowerBoost,
       totalFollowersCount: totalFollowersCount,
-      profileColor: row['profile_color']?.toString(),
-      profileImage: row['profile_image']?.toString(),
+      profileColor: profileColor?.toString(),
+      profileImage: profileImage?.toString(),
     );
   }
 

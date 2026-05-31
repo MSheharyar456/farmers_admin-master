@@ -11,6 +11,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
 import 'package:provider/provider.dart';
+import 'package:farmers_admin/widgets/loading_overlay.dart';
 
 class SoldPostsScreen extends StatefulWidget {
   const SoldPostsScreen({super.key});
@@ -345,7 +346,9 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
                         title: "Delete Post",
                         message: "Are you sure you want to delete this post?",
                         onConfirm: () async {
-                          await context.read<AdminPostService>().deletePost(postId as String);
+                          await context.read<AdminPostService>().deletePost(
+                            postId as String,
+                          );
                           if (mounted) _loadPosts();
                         },
                       );
@@ -389,7 +392,12 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
     final service = context.read<AdminPostService>();
     try {
       // Fetch ONLY approved posts that are sold (both postIsSold = 1 and postIsSold = 2)
-      final rows = await service.getPosts(limit: 500, approved: 1, sold: 1, bypassCache: true);
+      final rows = await service.getPosts(
+        limit: 500,
+        approved: 1,
+        sold: 1,
+        bypassCache: true,
+      );
       if (!mounted) return;
       setState(() {
         _posts = service.postsFromRows(rows);
@@ -491,12 +499,9 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Expanded(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 400),
-                  child: Image.asset(
-                    'images/image_farm_nothing_remains.png',
-                    fit: BoxFit.contain,
-                  ),
+                child: Image.asset(
+                  'images/image_farm_nothing_remains.png',
+                  height: 150,
                 ),
               ),
               const SizedBox(height: 24),
@@ -512,7 +517,7 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
               const SizedBox(height: 8),
               const Text(
                 "Sold posts will appear here",
-                style: TextStyle(fontSize: 16, color: Colors.grey),
+                style: TextStyle(fontSize: 14, color: Colors.grey),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -550,7 +555,7 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
             const Text(
               "No sold posts found",
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 14,
                 fontWeight: FontWeight.bold,
                 color: Colors.black87,
               ),
@@ -940,12 +945,16 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
                     const SizedBox(height: 10),
 
                     // Grid Section
-                    SizedBox(
+                    Container(
+                      height: 300,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                       child: _isLoading
-                          ? const Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.green,
-                              ),
+                          ? const LoadingOverlay(
+                              text: 'Loading...',
+                              showBackdrop: false,
                             )
                           : _posts.isEmpty || _filteredPosts.isEmpty
                           ? _buildEmptyState()

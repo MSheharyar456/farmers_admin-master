@@ -2,6 +2,7 @@
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/user_model.dart';
+import 'package:farmers_admin/screens/user_management/add_user_screen.dart';
 import 'package:farmers_admin/screens/user_management/edit_user_screen.dart';
 import 'package:farmers_admin/viewmodels/user_viewmodel.dart';
 import 'package:farmers_admin/widgets/delete_dialog.dart';
@@ -11,6 +12,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:provider/provider.dart';
 import 'package:farmers_admin/services/permission_helper.dart';
+import 'package:farmers_admin/widgets/loading_overlay.dart';
 
 class UserScreen extends StatefulWidget {
   const UserScreen({super.key});
@@ -235,6 +237,23 @@ class _UserContentState extends State<UserContent> {
           onPressed: () => _showDeletionStatus(context),
           icon: const Icon(Icons.delete_outline, color: Colors.orange),
           tooltip: 'Deletion Status',
+        ),
+        const SizedBox(width: 4),
+        IconButton(
+          onPressed: () async {
+            final created = await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const AddUserScreen()),
+            );
+            if (created == true && context.mounted) {
+              await context.read<UserScreenViewModel>().loadFromRepository();
+              if (_isGridLoaded) {
+                _updatePlutoGridRows();
+              }
+            }
+          },
+          icon: const Icon(Icons.person_add_alt_1, color: Colors.green),
+          tooltip: 'Add User',
         ),
       ],
     );
@@ -529,9 +548,17 @@ class _UserContentState extends State<UserContent> {
   ) {
     // Show loading only on initial load
     if (viewModel.isLoading) {
-      return const SizedBox(
+      return  Container(
         height: 400,
-        child: Center(child: CircularProgressIndicator(color: Colors.green)),
+         decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Center(child:
+                       const  LoadingOverlay(
+                      text: 'Loading...',
+                      showBackdrop: false,
+                      )),
       );
     }
 

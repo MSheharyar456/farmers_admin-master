@@ -7,6 +7,7 @@ class DeletedUserModel {
   final String? phoneComplete;
   final String? profileImage;
   final bool isAdmin;
+  final bool isVerified;
   final bool isActiveSeller;
   final int? createdAt;
   final int? deletedAt;
@@ -16,6 +17,7 @@ class DeletedUserModel {
   final int userFollowing;
   final int userTotalPostsTime;
   final int? userTotalPostsExpiryTime;
+  final int postsCount;
   final Map<String, dynamic> rawData;
 
   DeletedUserModel({
@@ -26,6 +28,7 @@ class DeletedUserModel {
     this.phoneComplete,
     this.profileImage,
     required this.isAdmin,
+    required this.isVerified,
     required this.isActiveSeller,
     this.createdAt,
     this.deletedAt,
@@ -35,6 +38,7 @@ class DeletedUserModel {
     required this.userFollowing,
     required this.userTotalPostsTime,
     this.userTotalPostsExpiryTime,
+    required this.postsCount,
     required this.rawData,
   });
 
@@ -47,6 +51,7 @@ class DeletedUserModel {
       phoneComplete: map['phoneComplete']?.toString(),
       profileImage: map['profileImage']?.toString(),
       isAdmin: map['isAdmin'] == true || map['isAdmin'] == 1,
+      isVerified: map['isVerified'] == true || map['isVerified'] == 1 || map['is_subscribed'] == 1,
       isActiveSeller: map['isActiveSeller'] == true || map['isActiveSeller'] == 1,
       createdAt: map['createdAt'] is int ? map['createdAt'] : null,
       deletedAt: map['deletedAt'] is int ? map['deletedAt'] : null,
@@ -56,6 +61,7 @@ class DeletedUserModel {
       userFollowing: map['userFollowing'] ?? 0,
       userTotalPostsTime: map['userTotalPostsTime'] ?? 30,
       userTotalPostsExpiryTime: map['userTotalPostsExpiryTime'] is int ? map['userTotalPostsExpiryTime'] : null,
+      postsCount: map['postsCount'] ?? map['posts_count'] ?? 0,
       rawData: Map<String, dynamic>.from(map),
     );
   }
@@ -168,6 +174,10 @@ class DeletedUserStats {
 class DeletedUserPost {
   final String id;
   final String title;
+  final String? barcode;
+  final String? category;
+  final String? city;
+  final String? village;
   final String? description;
   final String? date;
   final String? status;
@@ -176,6 +186,10 @@ class DeletedUserPost {
   DeletedUserPost({
     required this.id,
     required this.title,
+    this.barcode,
+    this.category,
+    this.city,
+    this.village,
     this.description,
     this.date,
     this.status,
@@ -186,6 +200,10 @@ class DeletedUserPost {
     return DeletedUserPost(
       id: map['id']?.toString() ?? '',
       title: map['title']?.toString() ?? '',
+      barcode: map['barcode']?.toString(),
+      category: map['category']?.toString(),
+      city: map['city']?.toString(),
+      village: map['village']?.toString(),
       description: map['description']?.toString(),
       date: map['date']?.toString(),
       status: map['status']?.toString(),
