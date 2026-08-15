@@ -2,12 +2,15 @@ import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/post_report_model.dart';
 import 'package:farmers_admin/services/admin_report_posts_api_service.dart';
+import 'package:farmers_admin/widgets/delete_dialog.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
+import 'package:farmers_admin/widgets/loading_overlay.dart';
 
 class PostReportScreen extends StatefulWidget {
   const PostReportScreen({super.key});
@@ -62,16 +65,18 @@ class _PostReportContentState extends State<PostReportContent> {
         return PostReportModel.fromMap(id, e);
       }).toList();
       reports.sort((a, b) => b.postReportDate.compareTo(a.postReportDate));
-      if (mounted) setState(() {
-        _reports = reports;
-        _loading = false;
-      });
+      if (mounted)
+        setState(() {
+          _reports = reports;
+          _loading = false;
+        });
     } catch (e) {
       debugPrint('[POST_REPORT] Error loading reports: $e');
-      if (mounted) setState(() {
-        _reports = [];
-        _loading = false;
-      });
+      if (mounted)
+        setState(() {
+          _reports = [];
+          _loading = false;
+        });
     }
   }
 
@@ -110,6 +115,37 @@ class _PostReportContentState extends State<PostReportContent> {
           type: PlutoColumnType.text(),
           width: 180,
           enableEditingMode: false,
+          renderer: (rendererContext) {
+            final value = rendererContext.cell.value?.toString() ?? '';
+            return GestureDetector(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: value));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Copied: $value'),
+                    duration: const Duration(seconds: 1),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              },
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: Row(
+                  children: [
+                    const Icon(Icons.copy, size: 11, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        value,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       if (!isMobile)
         PlutoColumn(
@@ -118,6 +154,37 @@ class _PostReportContentState extends State<PostReportContent> {
           type: PlutoColumnType.text(),
           width: 130,
           enableEditingMode: false,
+          renderer: (rendererContext) {
+            final value = rendererContext.cell.value?.toString() ?? '';
+            return GestureDetector(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: value));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Copied: $value'),
+                    duration: const Duration(seconds: 1),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              },
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: Row(
+                  children: [
+                    const Icon(Icons.copy, size: 11, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        value,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       if (!isMobile)
         PlutoColumn(
@@ -159,8 +226,8 @@ class _PostReportContentState extends State<PostReportContent> {
             children: [
               // View button
               Container(
-                height: 20,
-                width: 20,
+                height: 27,
+                width: 27,
                 decoration: BoxDecoration(
                   color: Colors.green.shade50,
                   borderRadius: BorderRadius.circular(8),
@@ -169,7 +236,7 @@ class _PostReportContentState extends State<PostReportContent> {
                   padding: EdgeInsets.zero,
                   icon: const Icon(
                     Icons.visibility,
-                    size: 12,
+                    size: 14,
                     color: Colors.green,
                   ),
                   tooltip: 'View Details',
@@ -184,19 +251,15 @@ class _PostReportContentState extends State<PostReportContent> {
               const SizedBox(width: 8),
               // Delete button
               Container(
-                height: 20,
-                width: 20,
+                height: 27,
+                width: 27,
                 decoration: BoxDecoration(
                   color: Colors.red.shade50,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: IconButton(
                   padding: EdgeInsets.zero,
-                  icon: const Icon(
-                    Icons.delete,
-                    size: 12,
-                    color: Colors.red,
-                  ),
+                  icon: const Icon(Icons.delete, size: 14, color: Colors.red),
                   tooltip: 'Delete Report',
                   splashRadius: 20,
                   onPressed: () {
@@ -363,35 +426,15 @@ class _PostReportContentState extends State<PostReportContent> {
   }
 
   void _confirmDelete(String reportId) {
-    showDialog(
+    showDeleteDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text(
-          'Delete Report',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: const Text(
-          'Are you sure you want to delete this report? This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _deleteReport(reportId);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      title: 'Delete Report',
+      message: 'Are you sure you want to delete this report?',
+      onConfirm: () async {
+        await _deleteReport(reportId);
+      },
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
     );
   }
 
@@ -399,7 +442,7 @@ class _PostReportContentState extends State<PostReportContent> {
     try {
       final service = context.read<AdminReportPostsApiService>();
       await service.deleteReportPost(reportId);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -568,41 +611,75 @@ class _PostReportContentState extends State<PostReportContent> {
                                 },
                               ),
                               const SizedBox(height: 12),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                  onPressed: _applyFilters,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 12,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(5),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: _applyFilters,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 12,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(5),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          SvgPicture.asset(
+                                            'images/ic_farm_filter.svg',
+                                            height: 12,
+                                            width: 12,
+                                            color: Colors.white,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          const Text(
+                                            'APPLY',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      SvgPicture.asset(
-                                        'images/ic_farm_filter.svg',
-                                        height: 12,
-                                        width: 12,
-                                        color: Colors.white,
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          _searchController.clear();
+                                          _searchQuery = '';
+                                          _appliedSearchQuery = '';
+                                          _currentPage = 1;
+                                        });
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.red,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 12,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(5),
+                                        ),
                                       ),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        'APPLY FILTERS',
+                                      child: const Text(
+                                        'CLEAR',
                                         style: TextStyle(
                                           color: Colors.white,
                                           fontWeight: FontWeight.bold,
                                           fontSize: 10,
                                         ),
                                       ),
-                                    ],
+                                    ),
                                   ),
-                                ),
+                                ],
                               ),
                             ],
                           )
@@ -654,38 +731,75 @@ class _PostReportContentState extends State<PostReportContent> {
                               const SizedBox(width: 12),
                               Expanded(
                                 flex: 1,
-                                child: ElevatedButton(
-                                  onPressed: _applyFilters,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 20,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(5),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SvgPicture.asset(
-                                        'images/ic_farm_filter.svg',
-                                        height: 12,
-                                        width: 12,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        'APPLY FILTERS',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: _applyFilters,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.green,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 20,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(5),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            SvgPicture.asset(
+                                              'images/ic_farm_filter.svg',
+                                              height: 12,
+                                              width: 12,
+                                              color: Colors.white,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            const Text(
+                                              'APPLY',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _searchController.clear();
+                                            _searchQuery = '';
+                                            _appliedSearchQuery = '';
+                                            _currentPage = 1;
+                                          });
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 20,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(5),
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'CLEAR',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -694,27 +808,46 @@ class _PostReportContentState extends State<PostReportContent> {
                     // PlutoGrid Section
                     Builder(
                       builder: (context) {
+                        final reports = _reports
+                            .where(_matchesFilters)
+                            .toList();
+                        reports.sort(
+                          (a, b) =>
+                              b.postReportDate.compareTo(a.postReportDate),
+                        );
+
                         if (_loading) {
-                          return const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(32.0),
-                              child: CircularProgressIndicator(),
+                          return Container(
+                            height: _loading
+                                ? 300
+                                : (reports.length * rowHeight) + headerHeight,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const LoadingOverlay(
+                              text: 'Loading...',
+                              showBackdrop: false,
                             ),
                           );
                         }
-                        final reports = _reports.where(_matchesFilters).toList();
-                        reports.sort((a, b) => b.postReportDate.compareTo(a.postReportDate));
                         if (reports.isEmpty) {
                           return Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                            height: 400,
+                            width: double.infinity,
                             padding: const EdgeInsets.all(32),
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(
-                                  Icons.inbox_outlined,
-                                  size: 64,
-                                  color: Colors.grey[400],
+                                Image.asset(
+                                  'images/image_farm_nothing_remains.png',
+                                  height: 150,
                                 ),
+
                                 const SizedBox(height: 24),
                                 Text(
                                   _reports.isEmpty
@@ -731,7 +864,10 @@ class _PostReportContentState extends State<PostReportContent> {
                                   _reports.isEmpty
                                       ? "Post reports will appear here"
                                       : "No post report data found matching your filters.",
-                                  style: const TextStyle(fontSize: 14, color: Colors.grey),
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey,
+                                  ),
                                 ),
                               ],
                             ),
@@ -742,7 +878,10 @@ class _PostReportContentState extends State<PostReportContent> {
                         int startIndex = (_currentPage - 1) * _rowsPerPage;
                         int endIndex = startIndex + _rowsPerPage;
                         if (endIndex > totalRows) endIndex = totalRows;
-                        final paginatedReports = reports.sublist(startIndex, endIndex);
+                        final paginatedReports = reports.sublist(
+                          startIndex,
+                          endIndex,
+                        );
 
                         final List<PlutoRow> rows = paginatedReports
                             .asMap()

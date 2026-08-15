@@ -26,7 +26,10 @@ class AppHeader extends StatelessWidget {
           final avatarRadius = isTiny ? 10.0 : 12.0;
 
           return Container(
-            padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 2),
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: 2,
+            ),
             decoration: BoxDecoration(
               color: Color(0xFFF8F9FA),
               border: Border(
@@ -55,12 +58,18 @@ class AppHeader extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.black.withOpacity(0.5), width: 0.2),
+                      border: Border.all(
+                        color: Colors.black.withOpacity(0.5),
+                        width: 0.2,
+                      ),
                     ),
                     margin: EdgeInsets.all(5),
                     child: IconButton(
                       padding: const EdgeInsets.all(8),
-                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                      constraints: const BoxConstraints(
+                        minWidth: 20,
+                        minHeight: 20,
+                      ),
                       style: ButtonStyle(
                         overlayColor: WidgetStateProperty.resolveWith((states) {
                           if (states.contains(WidgetState.pressed)) {
@@ -74,13 +83,16 @@ class AppHeader extends StatelessWidget {
                         width: 12,
                         height: 12,
 
-                        colorFilter: const ColorFilter.mode(Colors.black, BlendMode.srcIn),
+                        colorFilter: const ColorFilter.mode(
+                          Colors.black,
+                          BlendMode.srcIn,
+                        ),
                       ),
                       onPressed: () {},
                     ),
                   ),
                 ),
-                SizedBox(width: isTiny ? 8 : 5),
+                // SizedBox(width: isTiny ? 3 : 3),
 
                 // Message Icon
                 Tooltip(
@@ -89,12 +101,18 @@ class AppHeader extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.black.withOpacity(0.5), width: 0.2),
+                      border: Border.all(
+                        color: Colors.black.withOpacity(0.5),
+                        width: 0.2,
+                      ),
                     ),
                     margin: EdgeInsets.all(5),
                     child: IconButton(
                       padding: const EdgeInsets.all(5),
-                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                      constraints: const BoxConstraints(
+                        minWidth: 20,
+                        minHeight: 20,
+                      ),
                       style: ButtonStyle(
                         overlayColor: WidgetStateProperty.resolveWith((states) {
                           if (states.contains(WidgetState.pressed)) {
@@ -107,13 +125,16 @@ class AppHeader extends StatelessWidget {
                         "images/ic_farm_message.svg",
                         width: 18,
                         height: 18,
-                        colorFilter: const ColorFilter.mode(Colors.black, BlendMode.srcIn),
+                        colorFilter: const ColorFilter.mode(
+                          Colors.black,
+                          BlendMode.srcIn,
+                        ),
                       ),
                       onPressed: () {},
                     ),
                   ),
                 ),
-                SizedBox(width: isTiny ? 8 : 0),
+                // SizedBox(width: isTiny ? 3 : 0),
 
                 // User profile or Sign in
                 if (currentUser != null)
@@ -210,7 +231,10 @@ class _ProfileAreaState extends State<_ProfileArea> {
           if (value == 1) {
             // Navigate to profile
           } else if (value == 2) {
-            final authService = Provider.of<AdminServerAuthService>(context, listen: false);
+            final authService = Provider.of<AdminServerAuthService>(
+              context,
+              listen: false,
+            );
             await authService.signOut();
             if (context.mounted) {
               Navigator.of(context).pushAndRemoveUntil(
@@ -222,7 +246,6 @@ class _ProfileAreaState extends State<_ProfileArea> {
         },
         itemBuilder: (context) {
           return [
-
             // PopupMenuItem(
             //   value: 2,
             //
@@ -256,5 +279,4 @@ class _ProfileAreaState extends State<_ProfileArea> {
       ),
     );
   }
-
 }

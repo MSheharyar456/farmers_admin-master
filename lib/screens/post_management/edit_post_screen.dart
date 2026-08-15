@@ -70,6 +70,10 @@ class _EditPostContentState extends State<EditPostContent> {
       // Service types for Delivery/Equipments (backend values)
       'delivered': 'Delivery',
       'sold': 'Sell',
+      'machine': 'Machine',
+      'solar_panel': 'Solar Panel',
+      'old': 'Old',
+      'new': 'New',
     };
 
     // Check if it's a special case
@@ -254,6 +258,8 @@ class _EditPostContentState extends State<EditPostContent> {
   late final TextEditingController _userMailController;
   late final TextEditingController _userNameController;
   late final TextEditingController _viewsController;
+  late final TextEditingController _whatsappClicksController;
+  late final TextEditingController _callClicksController;
 
   // NEW: Controllers for new fields
   late final TextEditingController _postNoLikesController;
@@ -277,6 +283,11 @@ class _EditPostContentState extends State<EditPostContent> {
       if (v.contains('sold') || v == 'sell') return 'sold';
       return 'delivered';
     }
+    // Machine and Solar Panel use old|new
+    if (c == 'machine' || c == 'solar_panel') {
+      if (v.contains('new')) return 'new';
+      return 'old';
+    }
     // Equipments, Agricultural Tools, Land Services etc use sell|rent
     if (v.contains('rent')) return 'rent';
     return 'sell';
@@ -288,6 +299,8 @@ class _EditPostContentState extends State<EditPostContent> {
   late bool _isCancelled;
   final int _selectedIndex = 1;
   bool _isLoading = false;
+
+  bool get _isDeletedUserSource => widget.sourceScreen == 'deleted_user_detail';
 
   // Boolean fields
   late bool _isApproved;
@@ -321,12 +334,17 @@ class _EditPostContentState extends State<EditPostContent> {
     "agriculturalTools",
     "delivery",
     "equipments",
+    "machine",
+    "solar_panel",
     "landServices",
     "workerServices",
     "irrigation",
     "live_stock",
     "others",
   ];
+
+  late final TextEditingController _customCategoryController;
+  late final TextEditingController _customLiveStockCategoryController;
 
   @override
   void initState() {
@@ -393,6 +411,12 @@ class _EditPostContentState extends State<EditPostContent> {
     );
     _userNameController = TextEditingController(text: post.postUserName);
     _viewsController = TextEditingController(text: post.postViews.toString());
+    _whatsappClicksController = TextEditingController(
+      text: post.postWhatsappClicks.toString(),
+    );
+    _callClicksController = TextEditingController(
+      text: post.postCallClicks.toString(),
+    );
 
     // NEW: Initialize new field controllers with Expiry Logic
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -459,10 +483,24 @@ class _EditPostContentState extends State<EditPostContent> {
       text: post.postIsSoldExpiry?.toString() ?? '0',
     );
 
+    _customCategoryController = TextEditingController(
+      text: !_categories.contains(post.postCategory) ? post.postCategory : '',
+    );
+    _customLiveStockCategoryController = TextEditingController(
+      text:
+          !([
+            'cow',
+            'goat',
+            'chicken',
+          ].contains(post.postLiveStockCategory?.toLowerCase().trim()))
+          ? (post.postLiveStockCategory ?? '')
+          : '',
+    );
+
     // Initialize category
     _category = _categories.contains(post.postCategory)
         ? post.postCategory
-        : null;
+        : post.postCategory;
 
     // Initialize category-specific dropdowns with safe defaults and sanitization
     final rawGender = (post.postGender ?? "male").toLowerCase().trim();
@@ -485,6 +523,8 @@ class _EditPostContentState extends State<EditPostContent> {
         (rawLiveStock == "cow" ||
             rawLiveStock == "goat" ||
             rawLiveStock == "chicken")
+        ? rawLiveStock
+        : rawLiveStock.isNotEmpty
         ? rawLiveStock
         : "cow";
 
@@ -663,7 +703,12 @@ class _EditPostContentState extends State<EditPostContent> {
 
   void _onCategoryChanged(String? newCategory) {
     setState(() {
-      _category = newCategory;
+      if (newCategory == 'custom') {
+        _category = '';
+        _customCategoryController.clear();
+      } else {
+        _category = newCategory;
+      }
       // Clear all category-specific controllers
       _quantityController.clear();
       _weightController.clear();
@@ -978,6 +1023,11 @@ class _EditPostContentState extends State<EditPostContent> {
 
     try {
       // Base post data
+      final effectiveCategory =
+          (_category != null && _category!.trim().isNotEmpty)
+          ? _category!.trim()
+          : 'others';
+
       Map<String, dynamic> postData = {
         "postCancelApproved": _isCancelled,
         // "postTitle": _titleController.text.trim(),
@@ -986,7 +1036,7 @@ class _EditPostContentState extends State<EditPostContent> {
         // "postPrice": double.tryParse(_priceController.text.trim()) ?? 0,
         // "postUserLocation": _locationController.text.trim(),
         // "postAdditionalDetails": _additionalDetailsController.text.trim(),
-        // "postCategory": _category ?? "others",
+        "postCategory": effectiveCategory,
         "postIsApproved": _isApproved,
         "postIsFeatured": _isFeatured,
         "postIsHomePost": _isHomePost,
@@ -1003,6 +1053,9 @@ class _EditPostContentState extends State<EditPostContent> {
         // "postUserMail": _userMailController.text.trim(),
         // "postUserName": _userNameController.text.trim(),
         "postViews": int.tryParse(_viewsController.text.trim()) ?? 0,
+        "postWhatsappClicks":
+            int.tryParse(_whatsappClicksController.text.trim()) ?? 0,
+        "postCallClicks": int.tryParse(_callClicksController.text.trim()) ?? 0,
 
         // NEW: Add new fields to postData
         "postNoLikes": int.tryParse(_postNoLikesController.text.trim()) ?? 0,
@@ -1051,6 +1104,15 @@ class _EditPostContentState extends State<EditPostContent> {
         "postIsSoldExpiry": widget.post.postIsSoldExpiry,
       };
 
+      if (effectiveCategory.toLowerCase() == 'live_stock' ||
+          effectiveCategory.toLowerCase() == 'livestock') {
+        postData['postLiveStockCategory'] =
+            (_liveStockCategory != null &&
+                _liveStockCategory!.trim().isNotEmpty)
+            ? _liveStockCategory!.trim()
+            : 'cow';
+      }
+
       debugPrint(
         '[EDIT_POST_SAVE] postId=${widget.post.postId} originalStatus=${widget.post.postIsSoldStatus} currentStatus=$_postIsSoldStatus isSold=$_isSold',
       );
@@ -1073,108 +1135,110 @@ class _EditPostContentState extends State<EditPostContent> {
         '  postPutTopTime: ${postData["postPutTopTime"]}, expiry: ${postData["postIsPutTopExpiry"]}',
       );
 
-      // // Add category-specific fields based on organized groups
-      // switch (_category) {
-      //   case "fruits":
-      //   case "vegetables":
-      //   case "pomegranate":
-      //   case "apples":
-      //     if (_weightCategory == "byKg") {
-      //       if (_averageWeightController.text.isNotEmpty) {
-      //         postData["postAverageWeight"] =
-      //             double.tryParse(_averageWeightController.text) ?? 0;
-      //       }
-      //     } else {
-      //       if (_quantityController.text.isNotEmpty) {
-      //         postData["postQuantity"] =
-      //             double.tryParse(_quantityController.text) ?? 0;
-      //       }
-      //     }
-      //     postData["postWeightCategory"] = _weightCategory;
-      //     break;
+      // Add category-specific fields based on organized groups
+      switch (_category) {
+        case "fruits":
+        case "vegetables":
+        case "pomegranate":
+        case "apples":
+          if (_weightCategory == "byKg") {
+            if (_averageWeightController.text.isNotEmpty) {
+              postData["postAverageWeight"] =
+                  double.tryParse(_averageWeightController.text) ?? 0;
+            }
+          } else {
+            if (_quantityController.text.isNotEmpty) {
+              postData["postQuantity"] =
+                  double.tryParse(_quantityController.text) ?? 0;
+            }
+          }
+          postData["postWeightCategory"] = _weightCategory;
+          break;
 
-      //   case "grain_seeds":
-      //   case "fertilizers":
-      //   case "animalsFeed":
-      //   case "cheese":
-      //   case "leafyGreen":
-      //   case "honey":
-      //   case "jam":
-      //     if (_averageWeightController.text.isNotEmpty) {
-      //       postData["postAverageWeight"] =
-      //           double.tryParse(_averageWeightController.text) ?? 0;
-      //     }
-      //     break;
+        case "grain_seeds":
+        case "fertilizers":
+        case "animalsFeed":
+        case "cheese":
+        case "leafyGreen":
+        case "honey":
+        case "jam":
+          if (_averageWeightController.text.isNotEmpty) {
+            postData["postAverageWeight"] =
+                double.tryParse(_averageWeightController.text) ?? 0;
+          }
+          break;
 
-      //   case "olive_oil":
-      //   case "pesticides":
-      //     if (_quantityController.text.isNotEmpty) {
-      //       postData["postQuantity"] =
-      //           double.tryParse(_quantityController.text) ?? 0;
-      //     }
-      //     postData["postWeightCategory"] = _quantityUnit;
-      //     break;
+        case "olive_oil":
+        case "pesticides":
+          if (_quantityController.text.isNotEmpty) {
+            postData["postQuantity"] =
+                double.tryParse(_quantityController.text) ?? 0;
+          }
+          postData["postWeightCategory"] = _quantityUnit;
+          break;
 
-      //   case "agriculturalTools":
-      //     if (_quantityController.text.isNotEmpty) {
-      //       postData["postQuantity"] =
-      //           double.tryParse(_quantityController.text) ?? 0;
-      //     }
-      //     postData["postServiceType"] = _serviceType;
-      //     break;
+        case "agriculturalTools":
+          if (_quantityController.text.isNotEmpty) {
+            postData["postQuantity"] =
+                double.tryParse(_quantityController.text) ?? 0;
+          }
+          postData["postServiceType"] = _serviceType;
+          break;
 
-      //   case "delivery":
-      //     postData["postServiceType"] = _serviceType;
-      //     break;
+        case "delivery":
+          postData["postServiceType"] = _serviceType;
+          break;
 
-      //   case "equipments":
-      //     if (_quantityController.text.isNotEmpty) {
-      //       postData["postQuantity"] =
-      //           double.tryParse(_quantityController.text) ?? 0;
-      //     }
-      //     postData["postServiceType"] = _serviceType;
-      //     break;
+        case "equipments":
+        case "machine":
+        case "solar_panel":
+          if (_quantityController.text.isNotEmpty) {
+            postData["postQuantity"] =
+                double.tryParse(_quantityController.text) ?? 0;
+          }
+          postData["postServiceType"] = _serviceType;
+          break;
 
-      //   case "landServices":
-      //     postData["postServiceType"] = _serviceType;
-      //     if (_areaController.text.isNotEmpty) {
-      //       postData["postArea"] = double.tryParse(_areaController.text.trim());
-      //     }
-      //     break;
+        case "landServices":
+          postData["postServiceType"] = _serviceType;
+          if (_areaController.text.isNotEmpty) {
+            postData["postArea"] = double.tryParse(_areaController.text.trim());
+          }
+          break;
 
-      //   case "workerServices":
-      //     postData["postGender"] = _gender;
-      //     postData["postQuantity"] = double.tryParse(
-      //       _quantityController.text.trim(),
-      //     );
-      //     postData["postAge"] = double.tryParse(_ageController.text.trim());
-      //     break;
+        case "workerServices":
+          postData["postGender"] = _gender;
+          postData["postQuantity"] = double.tryParse(
+            _quantityController.text.trim(),
+          );
+          postData["postAge"] = double.tryParse(_ageController.text.trim());
+          break;
 
-      //   case "irrigation":
-      //     if (_areaController.text.isNotEmpty) {
-      //       postData["postArea"] = double.tryParse(_areaController.text.trim());
-      //     }
-      //     break;
+        case "irrigation":
+          if (_areaController.text.isNotEmpty) {
+            postData["postArea"] = double.tryParse(_areaController.text.trim());
+          }
+          break;
 
-      //   case "live_stock":
-      //     postData["postLiveStockCategory"] = _liveStockCategory;
-      //     if (_quantityController.text.isNotEmpty) {
-      //       postData["postQuantity"] =
-      //           double.tryParse(_quantityController.text) ?? 0;
-      //     }
-      //     postData["postGender"] = _gender;
-      //     if (_ageController.text.isNotEmpty) {
-      //       postData["postAge"] = double.tryParse(_ageController.text) ?? 0;
-      //     }
-      //     break;
+        case "live_stock":
+          postData["postLiveStockCategory"] = _liveStockCategory;
+          if (_quantityController.text.isNotEmpty) {
+            postData["postQuantity"] =
+                double.tryParse(_quantityController.text) ?? 0;
+          }
+          postData["postGender"] = _gender;
+          if (_ageController.text.isNotEmpty) {
+            postData["postAge"] = double.tryParse(_ageController.text) ?? 0;
+          }
+          break;
 
-      //   case "others":
-      //     if (_quantityController.text.isNotEmpty) {
-      //       postData["postQuantity"] =
-      //           double.tryParse(_quantityController.text) ?? 0;
-      //     }
-      //     break;
-      // }
+        case "others":
+          if (_quantityController.text.isNotEmpty) {
+            postData["postQuantity"] =
+                double.tryParse(_quantityController.text) ?? 0;
+          }
+          break;
+      }
 
       // DEBUG: payload being sent
       debugPrint('[EditPost._updatePost] DEBUG request');
@@ -1746,7 +1810,7 @@ class _EditPostContentState extends State<EditPostContent> {
   }
 
   Widget _buildCategorySpecificFields() {
-    if (_category == null) return const SizedBox.shrink();
+    if (_category == null || _category!.isEmpty) return const SizedBox.shrink();
 
     List<Widget> fields = [];
 
@@ -1851,7 +1915,12 @@ class _EditPostContentState extends State<EditPostContent> {
           ],
         ),
       ]);
-    } else if (["agriculturalTools", "equipments"].contains(_category)) {
+    } else if ([
+      "agriculturalTools",
+      "equipments",
+      "machine",
+      "solar_panel",
+    ].contains(_category)) {
       fields.addAll([
         Row(
           children: [
@@ -1871,7 +1940,9 @@ class _EditPostContentState extends State<EditPostContent> {
                 // Equipments & Agricultural Tools: sell | rent, Delivery: delivered | sold
                 items: _category == "delivery"
                     ? ["delivered", "sold"]
-                    : ["sell", "rent"],
+                    : (_category == "machine" || _category == "solar_panel")
+                        ? ["old", "new"]
+                        : ["sell", "rent"],
                 onChanged: (val) => setState(() => _serviceType = val!),
                 enabled: false,
               ),
@@ -1963,7 +2034,7 @@ class _EditPostContentState extends State<EditPostContent> {
           ],
         ),
       ]);
-    } else if (_category == "live_stock") {
+    } else if (_category == "live_stock" || _category == "liveStock") {
       fields.addAll([
         Row(
           children: [
@@ -1971,8 +2042,17 @@ class _EditPostContentState extends State<EditPostContent> {
               child: _buildDropdownField(
                 label: "Animal Type*",
                 value: _liveStockCategory,
-                items: ["cow", "goat", "chicken"],
-                onChanged: (val) => setState(() => _liveStockCategory = val!),
+                items: ["cow", "goat", "chicken", "custom"],
+                onChanged: (val) {
+                  setState(() {
+                    if (val == 'custom') {
+                      _liveStockCategory = '';
+                      _customLiveStockCategoryController.clear();
+                    } else {
+                      _liveStockCategory = val!;
+                    }
+                  });
+                },
                 enabled: false,
               ),
             ),
@@ -2261,28 +2341,11 @@ class _EditPostContentState extends State<EditPostContent> {
           GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2, // Changed from 2 to 3 to accommodate 5 boxes
+            crossAxisCount: 3,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
-            childAspectRatio: 1.85,
+            childAspectRatio: 2.0,
             children: [
-              _buildExpiryCard(
-                label: "Colored Post",
-                expiryMillis: _isPostColored
-                    ? (widget.post.postIsColoredExpiry ?? 0)
-                    : 0,
-                icon: Icons.palette_outlined,
-                color: Colors.blue,
-                onExpire: () {
-                  if (_isPostColored) {
-                    _expirePromotionInDatabase('colored');
-                    setState(() {
-                      _isPostColored = false;
-                      _postIsColoredTimesController.text = '0';
-                    });
-                  }
-                },
-              ),
               _buildExpiryCard(
                 label: "Featured Post",
                 expiryMillis: _isFeatured
@@ -2300,6 +2363,24 @@ class _EditPostContentState extends State<EditPostContent> {
                   }
                 },
               ),
+              _buildExpiryCard(
+                label: "Colored Post",
+                expiryMillis: _isPostColored
+                    ? (widget.post.postIsColoredExpiry ?? 0)
+                    : 0,
+                icon: Icons.palette_outlined,
+                color: Colors.blue,
+                onExpire: () {
+                  if (_isPostColored) {
+                    _expirePromotionInDatabase('colored');
+                    setState(() {
+                      _isPostColored = false;
+                      _postIsColoredTimesController.text = '0';
+                    });
+                  }
+                },
+              ),
+
               _buildExpiryCard(
                 label: "Home Post",
                 expiryMillis: _isHomePost
@@ -2664,27 +2745,6 @@ class _EditPostContentState extends State<EditPostContent> {
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: _buildTextField3(
-                        controller: _viewsController,
-                        label: "Post View",
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        validator: (v) {
-                          if (v != null && v.isNotEmpty) {
-                            final views = int.tryParse(v);
-                            if (views == null || views < 0) {
-                              return "Enter a valid number";
-                            }
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
-
-                    const SizedBox(width: 16),
-                    Expanded(
                       child: _buildTextField(
                         controller: _locationController,
                         label: "Location",
@@ -2712,7 +2772,7 @@ class _EditPostContentState extends State<EditPostContent> {
                           SizedBox(
                             height: 38,
                             child: DropdownButtonFormField<String>(
-                              onChanged: null,
+                              onChanged: _isLoading ? null : _onCategoryChanged,
                               initialValue: _category,
                               decoration: InputDecoration(
                                 filled: true,
@@ -2746,7 +2806,13 @@ class _EditPostContentState extends State<EditPostContent> {
                                 style: TextStyle(fontSize: 12),
                               ),
                               dropdownColor: Colors.white,
-                              items: _getCategoryDropdownItems(),
+                              items: [
+                                ..._getCategoryDropdownItems(),
+                                DropdownMenuItem<String>(
+                                  value: 'custom',
+                                  child: Text('Custom category'),
+                                ),
+                              ],
                               // onChanged: _isLoading ? null : _onCategoryChanged,
                               icon: const Icon(
                                 Icons.keyboard_arrow_down,
@@ -2763,10 +2829,78 @@ class _EditPostContentState extends State<EditPostContent> {
                   ],
                 ),
 
+                if ((_category == null ||
+                        _category!.isEmpty ||
+                        !_categories.contains(_category!)) &&
+                    _customCategoryController != null) ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _customCategoryController,
+                    decoration: const InputDecoration(
+                      labelText: 'Custom category',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _category = value.trim().isNotEmpty
+                            ? value.trim()
+                            : null;
+                      });
+                    },
+                  ),
+                ],
+
+                if ((_liveStockCategory == null ||
+                        _liveStockCategory!.isEmpty ||
+                        ![
+                          'cow',
+                          'goat',
+                          'chicken',
+                        ].contains(_liveStockCategory!.toLowerCase().trim())) &&
+                    _customLiveStockCategoryController != null) ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _customLiveStockCategoryController,
+                    decoration: const InputDecoration(
+                      labelText: 'Custom subcategory',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _liveStockCategory = value.trim().isNotEmpty
+                            ? value.trim()
+                            : '';
+                      });
+                    },
+                  ),
+                ],
+
                 // NEW: Add row for new fields (postNoLikes, postLimits, postIsColoredTimes)
                 const SizedBox(height: 14),
                 Row(
                   children: [
+                    Expanded(
+                      child: _buildTextField3(
+                        controller: _viewsController,
+                        label: "Post View",
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        validator: (v) {
+                          if (v != null && v.isNotEmpty) {
+                            final views = int.tryParse(v);
+                            if (views == null || views < 0) {
+                              return "Enter a valid number";
+                            }
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(width: 16),
+
                     Expanded(
                       child: _buildTextField3(
                         controller: _postNoLikesController,
@@ -2786,6 +2920,29 @@ class _EditPostContentState extends State<EditPostContent> {
                         },
                       ),
                     ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildTextField3(
+                        controller: _whatsappClicksController,
+                        label: "WhatsApp Clicks",
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildTextField3(
+                        controller: _callClicksController,
+                        label: "Call Clicks",
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                      ),
+                    ),
+
                     // const SizedBox(width: 16),
                     // Expanded(
                     //   child: _buildTextField3(
@@ -2806,7 +2963,39 @@ class _EditPostContentState extends State<EditPostContent> {
                     //     },
                     //   ),
                     // ),
+                  ],
+                ),
+
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _buildTextField2(
+                        controller: _additionalDetailsController,
+                        label: "Additional Details",
+                      ),
+                    ),
+                    SizedBox(width: 16),
+                    Expanded(child: _buildCategorySpecificFields()),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildTextField3(
+                        controller: _postTopTimeController,
+                        label: "Post Featured Time",
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                      ),
+                    ),
                     const SizedBox(width: 16),
+
                     Expanded(
                       child: _buildTextField3(
                         controller: _postIsColoredTimesController,
@@ -2824,17 +3013,6 @@ class _EditPostContentState extends State<EditPostContent> {
                           }
                           return null;
                         },
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _buildTextField3(
-                        controller: _postTopTimeController,
-                        label: "Post Featured Time",
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -2862,22 +3040,7 @@ class _EditPostContentState extends State<EditPostContent> {
                   ],
                 ),
 
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _buildTextField2(
-                        controller: _additionalDetailsController,
-                        label: "Additional Details",
-                      ),
-                    ),
-                    SizedBox(width: 16),
-                    Expanded(child: _buildCategorySpecificFields()),
-                  ],
-                ),
-
-                const SizedBox(height: 5),
+                const SizedBox(height: 8),
                 const Text(
                   "Post Settings",
                   style: TextStyle(
@@ -3064,7 +3227,12 @@ class _EditPostContentState extends State<EditPostContent> {
                       child: SizedBox(
                         height: 38,
                         child: ElevatedButton(
-                          onPressed: _isLoading ? null : _updatePost,
+                          onPressed:
+                              _isLoading ||
+                                  _isDeletedUserSource ||
+                                  widget.sourceScreen == 'sold_posts'
+                              ? null
+                              : _updatePost,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green,
                             padding: const EdgeInsets.symmetric(vertical: 0),
@@ -3081,9 +3249,12 @@ class _EditPostContentState extends State<EditPostContent> {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : const Text(
-                                  "UPDATE POST",
-                                  style: TextStyle(
+                              : Text(
+                                  (_isDeletedUserSource ||
+                                          widget.sourceScreen == 'sold_posts')
+                                      ? "UPDATE DISABLED"
+                                      : "UPDATE POST",
+                                  style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w600,
                                     fontSize: 12,
@@ -3198,20 +3369,20 @@ class _EditPostContentState extends State<EditPostContent> {
                                   flex: 2,
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.start,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       _buildImageGallery(),
 
-                                      _buildExpirySection(),
+                                      if (!_isDeletedUserSource)
+                                        _buildExpirySection(),
                                     ],
                                   ),
                                 ),
                               ],
                             ),
                             if (_isLoading)
-                              const Positioned.fill(
-                                child: LoadingOverlay(),
-                              ),
+                              const Positioned.fill(child: LoadingOverlay()),
                           ],
                         ),
                       ],
@@ -3247,6 +3418,8 @@ class _EditPostContentState extends State<EditPostContent> {
     _userMailController.dispose();
     _userNameController.dispose();
     _viewsController.dispose();
+    _whatsappClicksController.dispose();
+    _callClicksController.dispose();
 
     // NEW: Dispose new controllers
     _postNoLikesController.dispose();

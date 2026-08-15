@@ -6,6 +6,10 @@ import 'package:farmers_admin/screens/notify_users/edit_notify_user.dart';
 import 'package:farmers_admin/viewmodels/user_viewmodel.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
 import 'package:flutter/material.dart';
+import 'package:farmers_admin/widgets/loading_overlay.dart';
+import 'package:flutter/services.dart';
+import 'package:farmers_admin/services/admin_notification_service.dart';
+import 'package:farmers_admin/services/admin_server_auth_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
 import 'package:pluto_grid/pluto_grid.dart';
@@ -45,6 +49,7 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
   bool _isGridLoaded = false;
 
   final TextEditingController _searchController = TextEditingController();
+  List<UserModel> _selectedUsers = [];
 
   @override
   void initState() {
@@ -153,40 +158,80 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
                       ),
                     ],
                   ),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const AddNotifyUserScreen(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.add, size: 14, color: Colors.white),
-                        SizedBox(width: 4),
-                        Text(
-                          "Add",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_selectedUsers.isNotEmpty) ...[
+                        ElevatedButton(
+                          onPressed: _showSelectedUsersNotificationDialog,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.send,
+                                size: 14,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                "Send to Selected (${_selectedUsers.length})",
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
+                        const SizedBox(width: 8),
                       ],
-                    ),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const AddNotifyUserScreen(),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.add, size: 14, color: Colors.white),
+                            SizedBox(width: 4),
+                            Text(
+                              "Add",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -219,40 +264,76 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
                   ),
                 ],
               ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const AddNotifyUserScreen(),
-                    ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.add, size: 14, color: Colors.white),
-                    SizedBox(width: 8),
-                    Text(
-                      "Add Notification",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_selectedUsers.isNotEmpty) ...[
+                    ElevatedButton(
+                      onPressed: _showSelectedUsersNotificationDialog,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 16,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.send, size: 14, color: Colors.white),
+                          const SizedBox(width: 8),
+                          Text(
+                            "Send to Selected (${_selectedUsers.length})",
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                    const SizedBox(width: 12),
                   ],
-                ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const AddNotifyUserScreen(),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 16,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.add, size: 14, color: Colors.white),
+                        SizedBox(width: 8),
+                        Text(
+                          "All Notification",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           );
@@ -269,7 +350,7 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
               TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  hintText: 'Search by name or email...',
+                  hintText: 'Search by name, email, or contact...',
                   prefixIcon: const Icon(Icons.search),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -323,41 +404,74 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  ElevatedButton(
-                    onPressed: () {
-                      viewModel.applyFilters();
-                      if (_isGridLoaded) _updatePlutoGridRows();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 16,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SvgPicture.asset(
-                          'images/ic_farm_filter.svg',
-                          height: 20,
-                          width: 20,
-                          color: Colors.white,
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        viewModel.applyFilters();
+                        if (_isGridLoaded) _updatePlutoGridRows();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 16,
                         ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          "APPLY",
-                          style: TextStyle(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SvgPicture.asset(
+                            'images/ic_farm_filter.svg',
+                            height: 20,
+                            width: 20,
                             color: Colors.white,
-                            fontWeight: FontWeight.bold,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          const Text(
+                            "APPLY",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        _searchController.clear();
+                        viewModel.resetFilters();
+                        if (_isGridLoaded) _updatePlutoGridRows();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 16,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text(
+                        "REMOVE FILTER",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
                 ],
               ),
             ],
@@ -374,7 +488,7 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: Colors.white,
-                      hintText: 'Search by name or email...',
+                      hintText: 'Search by name, email, or contact...',
                       hintStyle: const TextStyle(fontSize: 12),
                       prefixIcon: const Icon(Icons.search, size: 14),
                       border: OutlineInputBorder(
@@ -445,41 +559,75 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
               const SizedBox(width: 12),
               Expanded(
                 flex: 1,
-                child: ElevatedButton(
-                  onPressed: () {
-                    viewModel.applyFilters();
-                    if (_isGridLoaded) _updatePlutoGridRows();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 20,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SvgPicture.asset(
-                        'images/ic_farm_filter.svg',
-                        height: 12,
-                        width: 12,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        "APPLY FILTERS",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          viewModel.applyFilters();
+                          if (_isGridLoaded) _updatePlutoGridRows();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 20,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SvgPicture.asset(
+                              'images/ic_farm_filter.svg',
+                              height: 12,
+                              width: 12,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 4),
+                            const Text(
+                              "APPLY",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          _searchController.clear();
+                          viewModel.resetFilters();
+                          if (_isGridLoaded) _updatePlutoGridRows();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 20,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                        ),
+                        child: const Text(
+                          "CLEAR",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -524,6 +672,35 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
           child: PlutoGrid(
             columns: columns,
             rows: rows,
+            onRowChecked: (event) {
+              setState(() {
+                if (event.isAll == true) {
+                  final currentRowsUsers = stateManager.rows
+                      .map((r) => r.cells['userData']!.value as UserModel)
+                      .toList();
+                  if (event.isChecked == true) {
+                    for (var user in currentRowsUsers) {
+                      if (!_selectedUsers.any((u) => u.uid == user.uid)) {
+                        _selectedUsers.add(user);
+                      }
+                    }
+                  } else {
+                    for (var user in currentRowsUsers) {
+                      _selectedUsers.removeWhere((u) => u.uid == user.uid);
+                    }
+                  }
+                } else if (event.row != null) {
+                  final user = event.row!.cells['userData']!.value as UserModel;
+                  if (event.isChecked == true) {
+                    if (!_selectedUsers.any((u) => u.uid == user.uid)) {
+                      _selectedUsers.add(user);
+                    }
+                  } else {
+                    _selectedUsers.removeWhere((u) => u.uid == user.uid);
+                  }
+                }
+              });
+            },
             onLoaded: (event) {
               stateManager = event.stateManager;
               stateManager.setShowColumnFilter(false);
@@ -562,6 +739,7 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
         field: 'no',
         type: PlutoColumnType.number(),
         width: isMobile ? 50 : 60,
+        enableRowChecked: true,
         enableEditingMode: false,
       ),
       PlutoColumn(
@@ -846,8 +1024,10 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
     return List.generate(viewModel.paginatedUsers.length, (index) {
       final user = viewModel.paginatedUsers[index];
       final rowNumber = viewModel.pagination.startIndex + index + 1;
+      final isChecked = _selectedUsers.any((u) => u.uid == user.uid);
 
       return PlutoRow(
+        checked: isChecked,
         cells: {
           'no': PlutoCell(value: rowNumber),
           'fullName': PlutoCell(value: user.userName),
@@ -1007,6 +1187,229 @@ class _NotifyUsersContentState extends State<NotifyUsersContent> {
           ),
         ],
       ),
+    );
+  }
+
+  void _showSelectedUsersNotificationDialog() {
+    final titleController = TextEditingController(text: 'تطبيق محصولك');
+    final messageController = TextEditingController();
+    bool isSendingDialog = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              title: const Text('Send Notification to Selected Users'),
+              content: SizedBox(
+                width: 400,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'You are about to send a notification to ${_selectedUsers.length} selected users.',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Notification Title*',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          style: const TextStyle(fontSize: 12),
+                          controller: titleController,
+                          decoration: InputDecoration(
+                            hintText: 'Enter notification title...',
+                            filled: true,
+                            fillColor: Colors.grey[50],
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(5),
+                              borderSide: BorderSide(color: Colors.grey[300]!),
+                            ),
+                            focusedBorder: const OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: Colors.green,
+                                width: 2,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Notification Message*',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          style: const TextStyle(fontSize: 12),
+                          controller: messageController,
+                          maxLines: 4,
+                          decoration: InputDecoration(
+                            hintText: 'Enter notification message...',
+                            filled: true,
+                            fillColor: Colors.grey[50],
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(5),
+                              borderSide: BorderSide(color: Colors.grey[300]!),
+                            ),
+                            focusedBorder: const OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: Colors.green,
+                                width: 2,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSendingDialog
+                      ? null
+                      : () => Navigator.pop(dialogContext),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: isSendingDialog
+                      ? null
+                      : () async {
+                          if (titleController.text.trim().isEmpty ||
+                              messageController.text.trim().isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Please fill out both title and message.',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
+                          setStateDialog(() => isSendingDialog = true);
+
+                          try {
+                            final authService =
+                                Provider.of<AdminServerAuthService>(
+                                  context,
+                                  listen: false,
+                                );
+                            final authToken = authService.authToken;
+                            if (authToken == null)
+                              throw Exception('Auth token not found');
+
+                            for (var user in _selectedUsers) {
+                              await AdminNotificationService.sendNotification(
+                                title: titleController.text.trim(),
+                                message: messageController.text.trim(),
+                                userId: user.uid,
+                                type: 'admin_broadcast',
+                                authToken: authToken,
+                              );
+                            }
+
+                            if (!mounted) return;
+                            Navigator.pop(dialogContext);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Notification successfully sent to  users.',
+                                ),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+
+                            // Clear selection
+                            stateManager.toggleAllRowChecked(false);
+                            setState(() {
+                              _selectedUsers.clear();
+                            });
+                          } catch (e) {
+                            setStateDialog(() => isSendingDialog = false);
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Error: '),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                  ),
+                  child: isSendingDialog
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text(
+                          'Send Notification',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

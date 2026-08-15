@@ -10,6 +10,7 @@ import '../../common/side_menu.dart';
 import '../../repositories/user_repository.dart';
 import '../../services/admin_server_auth_service.dart';
 import '../../widgets/loading_overlay.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class EditUserScreen extends StatefulWidget {
   final Map user;
@@ -120,18 +121,29 @@ class _EditUserScreenState extends State<EditUserScreen> {
     ]);
     print('[EDIT_USER][INIT] selected image path: $_uploadedImagePath');
 
-    // If it's a Google image URL, try to cache it to Firebase Storage
+    // If it's a Google image URL, we no longer need to cache it to Firebase.
+    // We can just display it directly using the Google URL.
     if (_uploadedImagePath != null &&
         _uploadedImagePath!.contains('googleusercontent.com')) {
-      print('[EDIT_USER][INIT] detected googleusercontent image, caching...');
-      _cacheGoogleImage(_uploadedImagePath!);
+      print('[EDIT_USER][INIT] detected googleusercontent image, loading directly...');
     }
 
     loginDate = _formatTimestamp(user['userLoginDate']);
     print('[EDIT_USER][INIT] loginDate formatted: $loginDate');
 
-    // Fetch usage data
+    print('[EDIT_USER][INIT] Initial user data keys: ${widget.user.keys.toList()}');
+    print('[EDIT_USER][INIT] userTotalPostsExpiryTime: ${widget.user['userTotalPostsExpiryTime']}');
+    print('[EDIT_USER][INIT] userTotalPostsTimerUpdatedAt: ${widget.user['userTotalPostsTimerUpdatedAt']}');
+
+    // Fetch usage data and refresh user from server to get latest timer update timestamp
     _fetchUserUsage();
+    // Only refresh if timer update timestamp is missing from initial data
+    if ((widget.user['userTotalPostsTimerUpdatedAt'] ?? 0) == 0) {
+      print('[EDIT_USER][INIT] userTotalPostsTimerUpdatedAt is missing, will refresh from server');
+      _refreshUserFromServer();
+    } else {
+      print('[EDIT_USER][INIT] userTotalPostsTimerUpdatedAt already present, skipping refresh');
+    }
   }
 
   /// Fetch user's posts to calculate usage statistics
@@ -143,7 +155,8 @@ class _EditUserScreenState extends State<EditUserScreen> {
       if (userId == null) return;
 
       // Get posts used from user data directly (passed from backend)
-      final postLimitUsed = user['userPostLimitUsed'] ?? user['postLimitUsed'] ?? 0;
+      final postLimitUsed =
+          user['userPostLimitUsed'] ?? user['postLimitUsed'] ?? 0;
 
       // Fetch posts to calculate edit usage
       final posts = await _userRepository.getUserPosts(userId);
@@ -152,19 +165,71 @@ class _EditUserScreenState extends State<EditUserScreen> {
       int totalEdits = 0;
       for (final post in posts) {
         final updateCount = post['postIsUpdate'] ?? post['isUpdate'] ?? 0;
-        totalEdits += updateCount is int ? updateCount : int.tryParse(updateCount.toString()) ?? 0;
+        totalEdits += updateCount is int
+            ? updateCount
+            : int.tryParse(updateCount.toString()) ?? 0;
       }
 
       setState(() {
-        _postsUsed = postLimitUsed is int ? postLimitUsed : int.tryParse(postLimitUsed.toString()) ?? 0;
+        _postsUsed = postLimitUsed is int
+            ? postLimitUsed
+            : int.tryParse(postLimitUsed.toString()) ?? 0;
         _editsUsed = totalEdits;
       });
 
-      print('[EDIT_USER] Usage fetched - postsUsed: $_postsUsed, editsUsed: $_editsUsed');
+      print(
+        '[EDIT_USER] Usage fetched - postsUsed: $_postsUsed, editsUsed: $_editsUsed',
+      );
     } catch (e) {
       print('[EDIT_USER] Error fetching usage: $e');
     } finally {
       setState(() => _isLoadingUsage = false);
+    }
+  }
+
+  /// Refresh user data from server to ensure latest timer update timestamp is displayed
+  Future<void> _refreshUserFromServer() async {
+    try {
+      final userId = widget.user['id'] as String? ?? widget.user['uid'] as String?;
+      if (userId == null) {
+        print('[EDIT_USER][REFRESH] userId is null, skipping refresh');
+        return;
+      }
+
+      print('[EDIT_USER][REFRESH] Fetching fresh user data for userId=$userId');
+      final freshUser = await _userRepository.getUserById(userId);
+      if (freshUser == null) {
+        print('[EDIT_USER][REFRESH] Fresh user data is null, skipping update');
+        return;
+      }
+      if (!mounted) return;
+
+      print('[EDIT_USER][REFRESH] Fresh user data received:');
+      print('[EDIT_USER][REFRESH]   All keys: ${freshUser.keys.toList()}');
+      print('[EDIT_USER][REFRESH]   userTotalPostsTime: ${freshUser['userTotalPostsTime']}');
+      print('[EDIT_USER][REFRESH]   userTotalPostsExpiryTime: ${freshUser['userTotalPostsExpiryTime']}');
+      print('[EDIT_USER][REFRESH]   userTotalPostsTimerUpdatedAt: ${freshUser['userTotalPostsTimerUpdatedAt']}');
+
+      setState(() {
+        try {
+          widget.user.clear();
+          widget.user.addAll(freshUser);
+          _uploadedImagePath = _firstNonEmptyString([
+            widget.user['profileImage'],
+            widget.user['profile_image'],
+            widget.user['userImage'],
+            widget.user['user_image'],
+            widget.user['image'],
+          ]);
+          print('[EDIT_USER][REFRESH] User data refreshed successfully');
+          print('[EDIT_USER][REFRESH] After update - userTotalPostsTimerUpdatedAt: ${widget.user['userTotalPostsTimerUpdatedAt']}');
+        } catch (e) {
+          print('[EDIT_USER][REFRESH] Error updating widget.user: $e');
+        }
+      });
+    } catch (e) {
+      print('[EDIT_USER][REFRESH] Error refreshing user from server: $e');
+      // This is not critical - the user can still edit with the data they have
     }
   }
 
@@ -175,7 +240,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
         _isImageLoading = true;
       });
 
-      print('[EDIT_USER][CACHE] Attempting to cache Google image: $googleImageUrl');
+      print(
+        '[EDIT_USER][CACHE] Attempting to cache Google image: $googleImageUrl',
+      );
 
       final userId =
           widget.user['id'] as String? ?? widget.user['uid'] as String?;
@@ -194,11 +261,15 @@ class _EditUserScreenState extends State<EditUserScreen> {
           'user_profiles/$userId/profile.jpg',
         );
 
-        print('[EDIT_USER][CACHE] checking existing storage object: user_profiles/$userId/profile.jpg');
+        print(
+          '[EDIT_USER][CACHE] checking existing storage object: user_profiles/$userId/profile.jpg',
+        );
         final cachedUrl = await storageRef.getDownloadURL();
 
         // If we got here, the image already exists in Firebase Storage
-        print('[EDIT_USER][CACHE] Using cached image from Firebase Storage: $cachedUrl');
+        print(
+          '[EDIT_USER][CACHE] Using cached image from Firebase Storage: $cachedUrl',
+        );
 
         setState(() {
           _uploadedImagePath = cachedUrl;
@@ -214,7 +285,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
           widget.user['image'],
         ]);
         if (currentImage != cachedUrl) {
-          print('[EDIT_USER][CACHE] backend image differs, updating profileImage to cached url');
+          print(
+            '[EDIT_USER][CACHE] backend image differs, updating profileImage to cached url',
+          );
           await _userRepository.updateUser(userId, {'profileImage': cachedUrl});
         } else {
           print('[EDIT_USER][CACHE] backend already matches cached url');
@@ -223,7 +296,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
         return;
       } catch (e) {
         // Image doesn't exist in storage yet, continue to download and upload
-        print('[EDIT_USER][CACHE] No cached image found, downloading from Google... $e');
+        print(
+          '[EDIT_USER][CACHE] No cached image found, downloading from Google... $e',
+        );
       }
 
       // Download the image from Google
@@ -231,7 +306,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
 
       if (response.statusCode == 200) {
         final bytes = response.bodyBytes;
-        print('[EDIT_USER][CACHE] downloaded google image bytes: ${bytes.length}');
+        print(
+          '[EDIT_USER][CACHE] downloaded google image bytes: ${bytes.length}',
+        );
 
         // Upload to Firebase Storage
         final storageRef = FirebaseStorage.instance.ref().child(
@@ -249,7 +326,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
 
         // Update backend database
         await _userRepository.updateUser(userId, {'profileImage': downloadUrl});
-        print('[EDIT_USER][CACHE] backend updated with profileImage=$downloadUrl');
+        print(
+          '[EDIT_USER][CACHE] backend updated with profileImage=$downloadUrl',
+        );
 
         // Update local state
         setState(() {
@@ -259,7 +338,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
 
         print('Successfully cached image to Firebase Storage: $downloadUrl');
       } else {
-        print('[EDIT_USER][CACHE] Failed to download Google image: ${response.statusCode}');
+        print(
+          '[EDIT_USER][CACHE] Failed to download Google image: ${response.statusCode}',
+        );
         setState(() {
           _isImageLoading = false;
         });
@@ -343,10 +424,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
     print(_userIsVerified);
     try {
       final updatedData = {
-        // "userName": _nameController.text.trim(),
-        // "userContact": _phoneController.text.trim(),
-        // "userMail": _emailController.text.trim(),
-        //
+        "username": _nameController.text.trim(),
+        "userContact": _phoneController.text.trim(),
+        "userMail": _emailController.text.trim(),
         "userIsVerified": _userIsVerified,
         "userPostLimit":
             int.tryParse(_userPostLimitController.text.trim()) ?? 0,
@@ -355,7 +435,8 @@ class _EditUserScreenState extends State<EditUserScreen> {
         "userFollowing":
             int.tryParse(_userFollowingController.text.trim()) ?? 0,
         "userFollowerBoost":
-            (int.tryParse(_totalFollowersController.text.trim()) ?? 0) - (widget.user['actualFollowersCount'] ?? 0),
+            (int.tryParse(_totalFollowersController.text.trim()) ?? 0) -
+            (widget.user['actualFollowersCount'] ?? 0),
         // "userProfileImage": _uploadedImagePath ?? "",
         // "updatedAt": DateTime.now().millisecondsSinceEpoch,
       };
@@ -364,22 +445,59 @@ class _EditUserScreenState extends State<EditUserScreen> {
           int.tryParse(_userTotalPostsTimeController.text.trim()) ?? 0;
       if (currentTotalPostDays != _initialUserTotalPostsTime) {
         updatedData["userTotalPostsTime"] = currentTotalPostDays;
-        updatedData["userTotalPostsExpiryTime"] = DateTime.now()
+        final now = DateTime.now();
+        final expiryMillis = now
             .add(Duration(days: currentTotalPostDays))
             .millisecondsSinceEpoch;
+        final updateTimestampMillis = now.millisecondsSinceEpoch;
+        updatedData["userTotalPostsExpiryTime"] = expiryMillis;
+        updatedData["userTotalPostsTimerUpdatedAt"] = updateTimestampMillis;
+        // Optimistically update local user map so UI shows the new expiry date immediately
+        try {
+          widget.user['userTotalPostsExpiryTime'] = expiryMillis;
+          widget.user['userTotalPostsTimerUpdatedAt'] = updateTimestampMillis;
+          // update initial so further saves compare correctly
+          _initialUserTotalPostsTime = currentTotalPostDays;
+        } catch (_) {}
       }
 
-      final userId = widget.user['id'] as String? ?? widget.user['uid'] as String?;
+      final userId =
+          widget.user['id'] as String? ?? widget.user['uid'] as String?;
       if (userId == null) {
         throw Exception('User ID not found');
       }
 
+      print('[EDIT_USER] Sent updatedData: $updatedData');
       await _userRepository.updateUser(userId, updatedData);
+
+      // After successful update, re-fetch the authoritative user from server
+      final freshUser = await _userRepository.getUserById(userId);
+      print('[EDIT_USER] Fresh user from backend: $freshUser');
+      print('[EDIT_USER] Fresh user keys: ${freshUser?.keys.toList()}');
+      print('[EDIT_USER] Fresh userTotalPostsExpiryTime: ${freshUser?['userTotalPostsExpiryTime']}');
+      print('[EDIT_USER] Fresh userTotalPostsTimerUpdatedAt: ${freshUser?['userTotalPostsTimerUpdatedAt']}');
 
       if (!mounted) return;
 
       setState(() {
         _isLoading = false;
+        if (freshUser != null) {
+          try {
+            widget.user.clear();
+            widget.user.addAll(freshUser);
+            print('[EDIT_USER] After setState - widget.user keys: ${widget.user.keys.toList()}');
+            print('[EDIT_USER] After setState - userTotalPostsExpiryTime: ${widget.user['userTotalPostsExpiryTime']}');
+            print('[EDIT_USER] After setState - userTotalPostsTimerUpdatedAt: ${widget.user['userTotalPostsTimerUpdatedAt']}');
+            _uploadedImagePath = _firstNonEmptyString([
+              widget.user['profileImage'],
+              widget.user['profile_image'],
+              widget.user['userImage'],
+              widget.user['user_image'],
+              widget.user['image'],
+            ]);
+            _initialUserTotalPostsTime = int.tryParse((widget.user['userTotalPostsTime'] ?? 0).toString()) ?? _initialUserTotalPostsTime;
+          } catch (_) {}
+        }
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -429,6 +547,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
       debugPrint('Error updating user: $e');
     }
   }
+
   Widget _buildTextField1({
     required String label,
     required TextEditingController controller,
@@ -453,7 +572,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
         SizedBox(
           height: 40,
           child: TextFormField(
-             readOnly: true,
+            readOnly: true,
             style: TextStyle(fontSize: 12),
             controller: controller,
             validator: validator,
@@ -481,6 +600,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
       ],
     );
   }
+
   /// Build a text field for limits with usage info displayed
   Widget _buildLimitTextField({
     required String label,
@@ -492,7 +612,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
     List<TextInputFormatter>? inputFormatters,
   }) {
     final remaining = limit - used;
-    final color = remaining <= 0 ? Colors.red : (remaining <= 1 ? Colors.orange : Colors.green);
+    final color = remaining <= 0
+        ? Colors.red
+        : (remaining <= 1 ? Colors.orange : Colors.green);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -512,7 +634,10 @@ class _EditUserScreenState extends State<EditUserScreen> {
               SizedBox(
                 width: 12,
                 height: 12,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.grey,
+                ),
               )
             else
               Container(
@@ -601,8 +726,8 @@ class _EditUserScreenState extends State<EditUserScreen> {
       final millis = raw is int
           ? raw
           : raw is double
-              ? raw.toInt()
-              : int.tryParse(raw?.toString() ?? '');
+          ? raw.toInt()
+          : int.tryParse(raw?.toString() ?? '');
       if (millis != null && millis > 0) {
         return DateTime.fromMillisecondsSinceEpoch(millis);
       }
@@ -623,7 +748,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
       print('[EDIT_USER][IMG] protocol-relative resolved: $resolved');
       return resolved;
     }
-    final base = apiBaseUrl.endsWith('/') ? apiBaseUrl.substring(0, apiBaseUrl.length - 1) : apiBaseUrl;
+    final base = apiBaseUrl.endsWith('/')
+        ? apiBaseUrl.substring(0, apiBaseUrl.length - 1)
+        : apiBaseUrl;
     final path = trimmed.startsWith('/') ? trimmed : '/$trimmed';
     final resolved = '$base$path';
     print('[EDIT_USER][IMG] relative resolved: $resolved');
@@ -665,8 +792,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
     final totalDays = _getTotalPostDays();
     final usedDays = _getUsedPostDays();
     final remainingDays = _getRemainingPostDays();
-    final summaryColor =
-        remainingDays <= 0 && totalDays > 0 ? Colors.red : Colors.green;
+    final summaryColor = remainingDays <= 0 && totalDays > 0
+        ? Colors.red
+        : Colors.green;
 
     return Container(
       width: double.infinity,
@@ -698,8 +826,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
     final totalDays = _getTotalPostDays();
     final usedDays = _getUsedPostDays();
     final remainingDays = _getRemainingPostDays();
-    final summaryColor =
-        remainingDays <= 0 && totalDays > 0 ? Colors.red : Colors.green;
+    final summaryColor = remainingDays <= 0 && totalDays > 0
+        ? Colors.red
+        : Colors.green;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -898,10 +1027,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
           child: Container(
             height: 40,
             margin: const EdgeInsets.only(bottom: 12),
-            padding: EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 6,
-            ),
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             decoration: BoxDecoration(
               color: Colors.grey[50],
               borderRadius: BorderRadius.circular(5),
@@ -913,13 +1039,15 @@ class _EditUserScreenState extends State<EditUserScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-
                       if (subtitle != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 6),
                           child: Text(
                             subtitle,
-                            style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                            ),
                           ),
                         ),
                     ],
@@ -928,62 +1056,61 @@ class _EditUserScreenState extends State<EditUserScreen> {
 
                 const SizedBox(width: 12),
 
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    width: 60,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      color: value ? Colors.green : Colors.grey[300],
-                    ),
-                    child: Stack(
-                      children: [
-                        // ON/OFF text
-                        AnimatedPositioned(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                          left: value ? 10 : null,
-                          right: value ? null : 10,
-                          top: 0,
-                          bottom: 0,
-                          child: Center(
-                            child: Text(
-                              value ? 'ON' : 'OFF',
-                              style: TextStyle(
-                                fontSize: 8,
-                                fontWeight: FontWeight.bold,
-                                color: value ? Colors.white : Colors.grey[600],
-                              ),
-                            ),
-                          ),
-                        ),
-                        // White circle thumb
-                        AnimatedPositioned(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                          left: value ? 35 : 5,
-                          top: 4,
-                          child: Container(
-                            width: 18,
-                            height: 18,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.2),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  width: 60,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    color: value ? Colors.green : Colors.grey[300],
                   ),
-
+                  child: Stack(
+                    children: [
+                      // ON/OFF text
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        left: value ? 10 : null,
+                        right: value ? null : 10,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: Text(
+                            value ? 'ON' : 'OFF',
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                              color: value ? Colors.white : Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                      ),
+                      // White circle thumb
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        left: value ? 35 : 5,
+                        top: 4,
+                        child: Container(
+                          width: 18,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.2),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -1030,38 +1157,41 @@ class _EditUserScreenState extends State<EditUserScreen> {
           color: Colors.grey[200],
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Center(
-          child: CircularProgressIndicator(color: Colors.green),
-        ),
+        child: Center(child: CircularProgressIndicator(color: Colors.green)),
       );
     }
 
     // Get user's profile color from the user data
     final user = widget.user;
-    final colorHex = ([
-      user['profileColor'],
-      user['profile_color'],
-      user['userImageColor'],
-      user['user_profile_color'],
-      user['sellerColor'],
-      user['seller_color'],
-      user['profileImageColor'],
-      user['profile_image_color'],
-      user['imageColor'],
-      user['image_color'],
-    ].firstWhere(
-      (value) => value != null && value.toString().trim().isNotEmpty,
-      orElse: () => null,
-    ))?.toString();
+    final colorHex =
+        ([
+              user['profileColor'],
+              user['profile_color'],
+              user['userImageColor'],
+              user['user_profile_color'],
+              user['sellerColor'],
+              user['seller_color'],
+              user['profileImageColor'],
+              user['profile_image_color'],
+              user['imageColor'],
+              user['image_color'],
+            ].firstWhere(
+              (value) => value != null && value.toString().trim().isNotEmpty,
+              orElse: () => null,
+            ))
+            ?.toString();
     final bgColor = _parseHexColor(colorHex, fallback: Colors.grey.shade300);
     print('[EDIT_USER][IMG] colorHex="$colorHex" bgColor=$bgColor');
 
     // Check if image URL exists and is not the default placeholder.
-    final hasValidImage = _uploadedImagePath != null &&
+    final hasValidImage =
+        _uploadedImagePath != null &&
         _uploadedImagePath!.isNotEmpty &&
         _uploadedImagePath != 'default_pfp.jpg' &&
         !_uploadedImagePath!.endsWith('default_pfp.jpg');
-    print('[EDIT_USER][IMG] _uploadedImagePath=$_uploadedImagePath hasValidImage=$hasValidImage');
+    print(
+      '[EDIT_USER][IMG] _uploadedImagePath=$_uploadedImagePath hasValidImage=$hasValidImage',
+    );
 
     if (hasValidImage) {
       print('[EDIT_USER][IMG] rendering image preview');
@@ -1102,7 +1232,9 @@ class _EditUserScreenState extends State<EditUserScreen> {
             errorBuilder: (context, error, stackTrace) {
               print('[EDIT_USER][IMG] Error loading image: $error');
               // Fallback to initials on error
-              print('[EDIT_USER][IMG] falling back to initials after image error');
+              print(
+                '[EDIT_USER][IMG] falling back to initials after image error',
+              );
               return Center(
                 child: Text(
                   _userInitials,
@@ -1231,361 +1363,389 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                         key: _formKey,
                                         child: Column(
                                           children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: _buildTextField(
-                                                label: "Enter Name*",
-                                                controller: _nameController,
-                                                validator: (v) => v!.isEmpty
-                                                    ? "Enter name"
-                                                    : null,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Expanded(
-                                              child: _buildTextField(
-                                                label: "Email*",
-                                                controller: _emailController,
-                                                keyboardType:
-                                                    TextInputType.emailAddress,
-                                                validator: (v) {
-                                                  if (v == null || v.isEmpty) {
-                                                    return "Enter email";
-                                                  }
-                                                  if (!v.contains('@')) {
-                                                    return "Enter valid email";
-                                                  }
-                                                  return null;
-                                                },
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: _buildTextField(
-                                                label: "Phone Number",
-                                                controller: _phoneController,
-                                                keyboardType:
-                                                    TextInputType.phone,
-                                                inputFormatters: [
-                                                  FilteringTextInputFormatter.allow(
-                                                    RegExp(r'^\+?[0-9]*$'),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: _buildTextField(
+                                                    label: "Enter Name*",
+                                                    controller: _nameController,
+                                                    validator: (v) => v!.isEmpty
+                                                        ? "Enter name"
+                                                        : null,
                                                   ),
-                                                ],
-                                              ),
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    "Login Date",
-                                                    style: const TextStyle(
-                                                      fontSize: 12,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                      color: Colors.black,
-                                                    ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: _buildTextField(
+                                                    label: "Email*",
+                                                    controller:
+                                                        _emailController,
+                                                    keyboardType: TextInputType
+                                                        .emailAddress,
+                                                    validator: (v) {
+                                                      if (v == null ||
+                                                          v.isEmpty) {
+                                                        return "Enter email";
+                                                      }
+                                                      if (!v.contains('@')) {
+                                                        return "Enter valid email";
+                                                      }
+                                                      return null;
+                                                    },
                                                   ),
-                                                  const SizedBox(height: 5),
-
-                                                  Container(
-                                                    height: 40,
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 12,
-                                                          vertical: 0,
-                                                        ),
-                                                    decoration: BoxDecoration(
-                                                      border: Border.all(
-                                                        color: Colors
-                                                            .grey
-                                                            .shade400,
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 10),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: _buildTextField(
+                                                    label: "Phone Number",
+                                                    controller:
+                                                        _phoneController,
+                                                    keyboardType:
+                                                        TextInputType.phone,
+                                                    inputFormatters: [
+                                                      FilteringTextInputFormatter.allow(
+                                                        RegExp(r'^\+?[0-9]*$'),
                                                       ),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            5,
+                                                    ],
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        "Login Date",
+                                                        style: const TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                          color: Colors.black,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 5),
+
+                                                      Container(
+                                                        height: 40,
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              horizontal: 12,
+                                                              vertical: 0,
+                                                            ),
+                                                        decoration: BoxDecoration(
+                                                          border: Border.all(
+                                                            color: Colors
+                                                                .grey
+                                                                .shade400,
                                                           ),
-                                                      color:
-                                                          Colors.grey.shade100,
-                                                    ),
-                                                    child: Row(
-                                                      mainAxisAlignment:
-                                                          MainAxisAlignment
-                                                              .spaceBetween,
-                                                      children: [
-                                                        Text(
-                                                          loginDate,
-                                                          style:
-                                                              const TextStyle(
-                                                                fontSize: 12,
-                                                                color: Colors
-                                                                    .black87,
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                5,
+                                                              ),
+                                                          color: Colors
+                                                              .grey
+                                                              .shade100,
+                                                        ),
+                                                        child: Row(
+                                                          mainAxisAlignment:
+                                                              MainAxisAlignment
+                                                                  .spaceBetween,
+                                                          children: [
+                                                            Text(
+                                                              loginDate,
+                                                              style:
+                                                                  const TextStyle(
+                                                                    fontSize:
+                                                                        12,
+                                                                    color: Colors
+                                                                        .black87,
+                                                                  ),
+                                                            ),
+                                                            const Icon(
+                                                              Icons
+                                                                  .calendar_today_outlined,
+                                                              color:
+                                                                  Colors.grey,
+                                                              size: 14,
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+
+                                            const SizedBox(height: 10),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: _buildLimitTextField(
+                                                    label: "User Post Limit",
+                                                    controller:
+                                                        _userPostLimitController,
+                                                    used: _postsUsed,
+                                                    limit:
+                                                        int.tryParse(
+                                                          _userPostLimitController
+                                                              .text,
+                                                        ) ??
+                                                        0,
+                                                    keyboardType:
+                                                        TextInputType.number,
+                                                    inputFormatters: [
+                                                      FilteringTextInputFormatter
+                                                          .digitsOnly,
+                                                    ],
+                                                    validator: (v) {
+                                                      if (v != null &&
+                                                          v.isNotEmpty) {
+                                                        if (int.tryParse(v) ==
+                                                            null) {
+                                                          return "Enter valid number";
+                                                        }
+                                                      }
+                                                      return null;
+                                                    },
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: _buildLimitTextField(
+                                                    label:
+                                                        "User Update Post Limit",
+                                                    controller:
+                                                        _userUpdatePostLimitController,
+                                                    used: _editsUsed,
+                                                    limit:
+                                                        int.tryParse(
+                                                          _userUpdatePostLimitController
+                                                              .text,
+                                                        ) ??
+                                                        0,
+                                                    keyboardType:
+                                                        TextInputType.number,
+                                                    inputFormatters: [
+                                                      FilteringTextInputFormatter
+                                                          .digitsOnly,
+                                                    ],
+                                                    validator: (v) {
+                                                      if (v != null &&
+                                                          v.isNotEmpty) {
+                                                        if (int.tryParse(v) ==
+                                                            null) {
+                                                          return "Enter valid number";
+                                                        }
+                                                      }
+                                                      return null;
+                                                    },
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 10),
+                                            Row(
+                                              children: [
+                                                // Expanded(
+                                                //   child: _buildTextField(
+                                                //     label: "User Following (Min Required)",
+                                                //     controller:
+                                                //         _userFollowingController,
+                                                //     keyboardType:
+                                                //         TextInputType.number,
+                                                //     inputFormatters: [
+                                                //       FilteringTextInputFormatter.digitsOnly
+                                                //     ],
+                                                //     validator: (v) {
+                                                //       if (v != null &&
+                                                //           v.isNotEmpty) {
+                                                //         if (int.tryParse(v) ==
+                                                //             null) {
+                                                //           return "Enter valid number";
+                                                //         }
+                                                //       }
+                                                //       return null;
+                                                //     },
+                                                //   ),
+                                                // ),
+                                                Expanded(
+                                                  child: _buildTextField(
+                                                    label: "Total Followers",
+                                                    controller:
+                                                        _totalFollowersController,
+                                                    keyboardType:
+                                                        TextInputType.number,
+                                                    inputFormatters: [
+                                                      FilteringTextInputFormatter
+                                                          .digitsOnly,
+                                                    ],
+                                                    validator: (v) {
+                                                      if (v != null &&
+                                                          v.isNotEmpty) {
+                                                        if (int.tryParse(v) ==
+                                                            null) {
+                                                          return "Enter valid number";
+                                                        }
+                                                      }
+                                                      return null;
+                                                    },
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: _buildTimerTextField(
+                                                    label:
+                                                        "User Total Post Timer",
+                                                    controller:
+                                                        _userTotalPostsTimeController,
+                                                    keyboardType:
+                                                        TextInputType.number,
+                                                    inputFormatters: [
+                                                      FilteringTextInputFormatter
+                                                          .digitsOnly,
+                                                    ],
+                                                    validator: (v) {
+                                                      if (v != null &&
+                                                          v.isNotEmpty) {
+                                                        if (int.tryParse(v) ==
+                                                            null) {
+                                                          return "Enter valid number";
+                                                        }
+                                                      }
+                                                      return null;
+                                                    },
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 10),
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.start,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Expanded(
+                                                  child: _buildSwitchField(
+                                                    label: "User Verified",
+                                                    subtitle:
+                                                        "Enable verification status for this customer",
+                                                    value: _userIsVerified,
+                                                    onChanged: (val) {
+                                                      print(
+                                                        "before update: $_userIsVerified",
+                                                      );
+                                                      setState(() {
+                                                        _userIsVerified = val;
+                                                        print(
+                                                          "After update: $_userIsVerified",
+                                                        );
+                                                      });
+                                                    },
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+
+                                            const SizedBox(height: 20),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: SizedBox(
+                                                    height: 40,
+                                                    child: OutlinedButton(
+                                                      onPressed: _isLoading
+                                                          ? null
+                                                          : () => Navigator.pop(
+                                                              context,
+                                                            ),
+                                                      style: OutlinedButton.styleFrom(
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              vertical: 0,
+                                                            ),
+                                                        side: BorderSide(
+                                                          color:
+                                                              Colors.grey[400]!,
+                                                        ),
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                5,
                                                               ),
                                                         ),
-                                                        const Icon(
-                                                          Icons
-                                                              .calendar_today_outlined,
-                                                          color: Colors.grey,
-                                                          size: 14,
+                                                      ),
+                                                      child: const Text(
+                                                        "CANCEL",
+                                                        style: TextStyle(
+                                                          color: Colors.black54,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          fontSize: 12,
                                                         ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-
-                                        const SizedBox(height: 10),
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: _buildLimitTextField(
-                                                label: "User Post Limit",
-                                                controller:
-                                                    _userPostLimitController,
-                                                used: _postsUsed,
-                                                limit: int.tryParse(_userPostLimitController.text) ?? 0,
-                                                keyboardType:
-                                                    TextInputType.number,
-                                                inputFormatters: [
-                                                  FilteringTextInputFormatter.digitsOnly
-                                                ],
-                                                validator: (v) {
-                                                  if (v != null &&
-                                                      v.isNotEmpty) {
-                                                    if (int.tryParse(v) ==
-                                                        null) {
-                                                      return "Enter valid number";
-                                                    }
-                                                  }
-                                                  return null;
-                                                },
-                                              ),
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Expanded(
-                                              child: _buildLimitTextField(
-                                                label: "User Update Post Limit",
-                                                controller:
-                                                    _userUpdatePostLimitController,
-                                                used: _editsUsed,
-                                                limit: int.tryParse(_userUpdatePostLimitController.text) ?? 0,
-                                                keyboardType:
-                                                    TextInputType.number,
-                                                inputFormatters: [
-                                                  FilteringTextInputFormatter.digitsOnly
-                                                ],
-                                                validator: (v) {
-                                                  if (v != null &&
-                                                      v.isNotEmpty) {
-                                                    if (int.tryParse(v) ==
-                                                        null) {
-                                                      return "Enter valid number";
-                                                    }
-                                                  }
-                                                  return null;
-                                                },
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Row(
-                                          children: [
-                                            // Expanded(
-                                            //   child: _buildTextField(
-                                            //     label: "User Following (Min Required)",
-                                            //     controller:
-                                            //         _userFollowingController,
-                                            //     keyboardType:
-                                            //         TextInputType.number,
-                                            //     inputFormatters: [
-                                            //       FilteringTextInputFormatter.digitsOnly
-                                            //     ],
-                                            //     validator: (v) {
-                                            //       if (v != null &&
-                                            //           v.isNotEmpty) {
-                                            //         if (int.tryParse(v) ==
-                                            //             null) {
-                                            //           return "Enter valid number";
-                                            //         }
-                                            //       }
-                                            //       return null;
-                                            //     },
-                                            //   ),
-                                            // ),
-
-                                            Expanded(
-                                              child: _buildTextField(
-                                                label: "Total Followers",
-                                                controller:
-                                                    _totalFollowersController,
-                                                keyboardType:
-                                                    TextInputType.number,
-                                                inputFormatters: [
-                                                  FilteringTextInputFormatter.digitsOnly
-                                                ],
-                                                validator: (v) {
-                                                  if (v != null &&
-                                                      v.isNotEmpty) {
-                                                    if (int.tryParse(v) ==
-                                                        null) {
-                                                      return "Enter valid number";
-                                                    }
-                                                  }
-                                                  return null;
-                                                },
-                                              ),
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Expanded(
-                                              child: _buildTimerTextField(
-                                                label: "User Total Post Timer",
-                                                controller:
-                                                _userTotalPostsTimeController,
-                                                keyboardType:
-                                                TextInputType.number,
-                                                inputFormatters: [
-                                                  FilteringTextInputFormatter.digitsOnly
-                                                ],
-                                                validator: (v) {
-                                                  if (v != null &&
-                                                      v.isNotEmpty) {
-                                                    if (int.tryParse(v) ==
-                                                        null) {
-                                                      return "Enter valid number";
-                                                    }
-                                                  }
-                                                  return null;
-                                                },
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Row(
-                                          mainAxisAlignment: MainAxisAlignment.start,
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Expanded(
-                                              child: _buildSwitchField(
-                                                label: "User Verified",
-                                                subtitle:
-                                                "Enable verification status for this customer",
-                                                value: _userIsVerified,
-                                                onChanged: (val) {
-                                                  print(
-                                                    "before update: $_userIsVerified",
-                                                  );
-                                                  setState(() {
-                                                    _userIsVerified = val;
-                                                    print(
-                                                      "After update: $_userIsVerified",
-                                                    );
-                                                  });
-                                                },
-                                              ),
-                                            )
-                                          ],
-                                        ),
-
-                                        const SizedBox(height: 20),
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: SizedBox(
-                                                height: 40,
-                                                child: OutlinedButton(
-                                                  onPressed: _isLoading
-                                                      ? null
-                                                      : () => Navigator.pop(
-                                                          context,
-                                                        ),
-                                                  style: OutlinedButton.styleFrom(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          vertical: 0,
-                                                        ),
-                                                    side: BorderSide(
-                                                      color: Colors.grey[400]!,
-                                                    ),
-                                                    shape: RoundedRectangleBorder(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            5,
-                                                          ),
-                                                    ),
-                                                  ),
-                                                  child: const Text(
-                                                    "CANCEL",
-                                                    style: TextStyle(
-                                                      color: Colors.black54,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      fontSize: 12,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: SizedBox(
-                                                height: 40,
-                                                child: ElevatedButton(
-                                                  onPressed: _isLoading
-                                                      ? null
-                                                      : _updateUser,
-                                                  style: ElevatedButton.styleFrom(
-                                                    backgroundColor:
-                                                        Colors.green,
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          vertical: 0,
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: SizedBox(
+                                                    height: 40,
+                                                    child: ElevatedButton(
+                                                      onPressed: _isLoading
+                                                          ? null
+                                                          : _updateUser,
+                                                      style: ElevatedButton.styleFrom(
+                                                        backgroundColor:
+                                                            Colors.green,
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              vertical: 0,
+                                                            ),
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                5,
+                                                              ),
                                                         ),
-                                                    shape: RoundedRectangleBorder(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            5,
-                                                          ),
-                                                    ),
-                                                  ),
-                                                  child: _isLoading
-                                                      ? const SizedBox(
-                                                          height: 15,
-                                                          width: 15,
-                                                          child:
-                                                              CircularProgressIndicator(
+                                                      ),
+                                                      child: _isLoading
+                                                          ? const SizedBox(
+                                                              height: 15,
+                                                              width: 15,
+                                                              child:
+                                                                  CircularProgressIndicator(
+                                                                    color: Colors
+                                                                        .white,
+                                                                    strokeWidth:
+                                                                        2,
+                                                                  ),
+                                                            )
+                                                          : const Text(
+                                                              "SAVE CHANGES",
+                                                              style: TextStyle(
                                                                 color: Colors
                                                                     .white,
-                                                                strokeWidth: 2,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                                fontSize: 12,
                                                               ),
-                                                        )
-                                                      : const Text(
-                                                          "SAVE CHANGES",
-                                                          style: TextStyle(
-                                                            color: Colors.white,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            fontSize: 12,
-                                                          ),
-                                                        ),
+                                                            ),
+                                                    ),
+                                                  ),
                                                 ),
-                                              ),
+                                              ],
                                             ),
-                                          ],
-                                        ),
                                           ],
                                         ),
                                       ),
@@ -1597,11 +1757,62 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                     child: Column(
                                       children: [
                                         ClipRRect(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                           child: _buildImagePreview(),
                                         ),
                                         const SizedBox(height: 12),
+                                        // Show post-timer expiry date and update timestamp if available
+                                        Builder(builder: (context) {
+                                          final expiry = widget.user['userTotalPostsExpiryTime'];
+                                          final updatedAt = widget.user['userTotalPostsTimerUpdatedAt'];
+                                          if (expiry == null || expiry == 0) {
+                                            return const SizedBox.shrink();
+                                          }
+                                          return Column(
+                                            children: [
+                                              Text(
+                                                'Posts expiry:',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[700],
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                _formatTimestamp(expiry),
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                              if (updatedAt != null && updatedAt != 0) ...
+                                                [
+                                                  const SizedBox(height: 8),
+                                                  Text(
+                                                    'Changed on:',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: Colors.grey[600],
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 3),
+                                                  Text(
+                                                    _formatTimestamp(updatedAt),
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w500,
+                                                      color: Colors.blue[700],
+                                                    ),
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                ],
+                                              const SizedBox(height: 6),
+                                            ],
+                                          );
+                                        }),
                                         // OutlinedButton.icon(
                                         //   onPressed: _isLoading ? null : _pickImage,
                                         //   icon: SvgPicture.asset(
@@ -1629,9 +1840,7 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                 ],
                               ),
                               if (_isLoading)
-                                const Positioned.fill(
-                                  child: LoadingOverlay(),
-                                ),
+                                const Positioned.fill(child: LoadingOverlay()),
                             ],
                           ),
                         ],

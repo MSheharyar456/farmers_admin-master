@@ -1,5 +1,6 @@
+import 'package:farmers_admin/services/admin_working_status_api_service.dart';
+import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_database/firebase_database.dart';
 import '../../common/app_header.dart';
 import '../../common/side_menu.dart';
 
@@ -12,7 +13,6 @@ class AddWorkingStatusScreen extends StatefulWidget {
 
 class _AddWorkingStatusScreenState extends State<AddWorkingStatusScreen> {
   final _formKey = GlobalKey<FormState>();
-  late DatabaseReference _dbRef;
 
   // Controllers
   final TextEditingController _titleController = TextEditingController();
@@ -26,7 +26,6 @@ class _AddWorkingStatusScreenState extends State<AddWorkingStatusScreen> {
   @override
   void initState() {
     super.initState();
-    _dbRef = FirebaseDatabase.instance.ref().child('workingStatus');
   }
 
   Future<void> _addWorkingStatus() async {
@@ -37,27 +36,15 @@ class _AddWorkingStatusScreenState extends State<AddWorkingStatusScreen> {
     });
 
     try {
-      final newStatusRef = _dbRef.push();
-
+      final api = context.read<AdminWorkingStatusApiService>();
       final newStatusData = {
-        "workingTitle": _titleController.text.trim(),
-        "workingDetails": _detailsController.text.trim(),
+        "messageEn": _titleController.text.trim(),
+        "messageAr": _detailsController.text.trim(),
         "isEnableButton": _isEnableButton,
         "isSomethingWrong": _isSomethingWrong,
-        "appVersionCode": int.tryParse(_appVersionController.text.trim()),
-        "createdAt": DateTime.now().millisecondsSinceEpoch,
+        "appVersionCode": int.tryParse(_appVersionController.text.trim()) ?? 0,
       };
-
-      await newStatusRef
-          .set(newStatusData)
-          .timeout(
-            const Duration(seconds: 30),
-            onTimeout: () {
-              throw Exception(
-                'Connection timeout. Please check your internet connection.',
-              );
-            },
-          );
+      await api.createWorkingStatus(newStatusData);
 
       if (!mounted) return;
 

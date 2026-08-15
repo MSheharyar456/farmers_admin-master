@@ -16,16 +16,26 @@ Future<void> showDeleteDialog({
     builder: (ctx) => Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Container(
-
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(8),color: Colors.white,),
-        constraints: const BoxConstraints(maxWidth: 400),
+        constraints: const BoxConstraints(maxWidth: 320),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(20.0),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-          ClipRRect( child: SvgPicture.asset( "images/delete.svg", semanticsLabel: "Your crop icon", width: 50, height: 50, ), ),
+              ClipRRect(
+                child: SvgPicture.asset(
+                  "images/delete.svg",
+                  semanticsLabel: "Delete Icon",
+                  width: 50,
+                  height: 50,
+                ),
+              ),
               const SizedBox(height: 12),
+
               Text(
                 title,
                 textAlign: TextAlign.center,
@@ -34,7 +44,9 @@ Future<void> showDeleteDialog({
                   fontWeight: FontWeight.bold,
                 ),
               ),
+
               const SizedBox(height: 5),
+
               Text(
                 message,
                 textAlign: TextAlign.center,
@@ -42,39 +54,54 @@ Future<void> showDeleteDialog({
               ),
 
               const SizedBox(height: 15),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                alignment: WrapAlignment.center,
+
+              Row(
                 children: [
-                  SizedBox(
-                    height: 30,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(5)),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 0),
+                  Expanded(
+                    child: SizedBox(
+                      height: 36,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          padding: EdgeInsets.zero,
+                        ),
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: Text(
+                          confirmText,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: Text(confirmText,
-                          style: const TextStyle(color: Colors.white, fontSize: 12)),
                     ),
                   ),
-                  SizedBox(
-                    height: 30,
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.grey),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(5)),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 0),
+
+                  const SizedBox(width: 12),
+
+                  Expanded(
+                    child: SizedBox(
+                      height: 36,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.grey),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          padding: EdgeInsets.zero,
+                        ),
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: Text(
+                          cancelText,
+                          style: const TextStyle(
+                            color: Colors.black87,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: Text(cancelText,
-                          style: const TextStyle(color: Colors.black87, fontSize: 12)),
                     ),
                   ),
                 ],
@@ -87,7 +114,8 @@ Future<void> showDeleteDialog({
   );
 
   if (confirm == true) {
-    await onConfirm(); // Perform the delete action
+    await onConfirm();
+
     if (context.mounted && showSuccessMessage) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

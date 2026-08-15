@@ -4,6 +4,7 @@ class CrashReportModel {
   final String stack;
   final bool fatal;
   final String platform;
+  final String deviceName;
   final String appVersion;
   final String buildNumber;
   final String locale;
@@ -17,6 +18,7 @@ class CrashReportModel {
     required this.stack,
     required this.fatal,
     required this.platform,
+    required this.deviceName,
     required this.appVersion,
     required this.buildNumber,
     required this.locale,
@@ -43,6 +45,7 @@ class CrashReportModel {
       stack: map['stack']?.toString() ?? '',
       fatal: map['fatal'] == true || map['fatal'] == 1,
       platform: map['platform']?.toString() ?? '',
+      deviceName: map['deviceName']?.toString() ?? '',
       appVersion: map['appVersion']?.toString() ?? '',
       buildNumber: map['buildNumber']?.toString() ?? '',
       locale: map['locale']?.toString() ?? '',
@@ -75,6 +78,7 @@ class CrashReportModel {
         'stack': stack,
         'fatal': fatal,
         'platform': platform,
+        'deviceName': deviceName,
         'appVersion': appVersion,
         'buildNumber': buildNumber,
         'locale': locale,

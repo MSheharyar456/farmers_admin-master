@@ -34,21 +34,55 @@ class AdminWorkingStatusApiService {
     if (data == null || data['success'] != true) return [];
     final list = data['workingStatus'] as List<dynamic>?;
     if (list == null) return [];
-    return list.map((e) => Map<String, dynamic>.from(e as Map<dynamic, dynamic>)).toList();
+    return list
+        .map((e) => Map<String, dynamic>.from(e as Map<dynamic, dynamic>))
+        .toList();
   }
 
   Future<String> createWorkingStatus(Map<String, dynamic> body) async {
-    final res = await _dio.post<Map<String, dynamic>>('/admin/working-status', data: body);
-    final data = res.data;
-    if (data == null || data['success'] != true) throw Exception('Failed to create');
-    return data['id'] as String? ?? '';
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        '/admin/working-status',
+        data: body,
+      );
+      final data = res.data;
+      if (data == null || data['success'] != true) {
+        throw Exception('Failed to create working status');
+      }
+      return data['id'] as String? ?? '';
+    } on DioException catch (e) {
+      throw Exception(_readServerMessage(e, 'You do not have permission to add working status.'));
+    }
   }
 
   Future<void> updateWorkingStatus(String id, Map<String, dynamic> body) async {
-    await _dio.put<Map<String, dynamic>>('/admin/working-status/$id', data: body);
+    try {
+      await _dio.put<Map<String, dynamic>>('/admin/working-status/$id', data: body);
+    } on DioException catch (e) {
+      throw Exception(_readServerMessage(e, 'You do not have permission to update this working status.'));
+    }
   }
 
   Future<void> deleteWorkingStatus(String id) async {
-    await _dio.delete<Map<String, dynamic>>('/admin/working-status/$id');
+    try {
+      await _dio.delete<Map<String, dynamic>>('/admin/working-status/$id');
+    } on DioException catch (e) {
+      throw Exception(_readServerMessage(e, 'You do not have permission to delete this working status.'));
+    }
+  }
+
+  String _readServerMessage(DioException e, String fallback) {
+    final data = e.response?.data;
+    if (data is Map<String, dynamic>) {
+      final message = data['message']?.toString().trim();
+      if (message != null && message.isNotEmpty) return message;
+    } else if (data is Map) {
+      final message = data['message']?.toString().trim();
+      if (message != null && message.isNotEmpty) return message;
+    }
+
+    final code = e.response?.statusCode;
+    if (code == 401 || code == 403) return fallback;
+    return fallback;
   }
 }

@@ -3,6 +3,7 @@ import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/services/slider_api_service.dart';
 import 'package:farmers_admin/widgets/delete_dialog.dart';
+import 'package:farmers_admin/widgets/loading_overlay.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -60,6 +61,7 @@ class _AdsImageContentState extends State<AdsImageContent> {
     setState(() => _loading = true);
     try {
       final list = await _sliderService.getSliderImages();
+      await _precacheSliderImages(list);
       if (mounted) setState(() {
         _items = list;
         _loading = false;
@@ -75,6 +77,26 @@ class _AdsImageContentState extends State<AdsImageContent> {
         );
       }
     }
+  }
+
+  Future<void> _precacheSliderImages(List<SliderItem> items) async {
+    final urls = items
+        .map((e) => e.url)
+        .where((url) => url.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (urls.isEmpty || !mounted) return;
+
+    await Future.wait(
+      urls.map((url) async {
+        try {
+          await precacheImage(CachedNetworkImageProvider(url), context);
+        } catch (_) {
+          // Ignore image cache failures; the tile error widget will handle it.
+        }
+      }),
+    );
   }
 
   Future<void> _pickAndUploadImage({int? specificOrder}) async {
@@ -399,7 +421,6 @@ class _AdsImageContentState extends State<AdsImageContent> {
                                   fit: BoxFit.cover,
                                   placeholder: (context, url) => Container(
                                     color: Colors.grey.shade100,
-                                    child: const Center(child: CircularProgressIndicator(color: Colors.green)),
                                   ),
                                   errorWidget: (context, url, error) => Container(
                                     color: Colors.grey.shade100,
@@ -568,10 +589,13 @@ class _AdsImageContentState extends State<AdsImageContent> {
                       ),
                     const SizedBox(height: 20),
                     if (_loading)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(50.0),
-                          child: CircularProgressIndicator(color: Colors.green),
+                      const SizedBox(
+                        height: 320,
+                        child: Center(
+                          child: LoadingOverlay(
+                            text: 'Loading ads images...',
+                            showBackdrop: false,
+                          ),
                         ),
                       )
                     else

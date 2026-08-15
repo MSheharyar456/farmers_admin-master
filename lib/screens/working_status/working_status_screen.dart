@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:farmers_admin/services/permission_helper.dart';
+import 'package:farmers_admin/widgets/loading_overlay.dart';
 
 class WorkingStatusManagementScreen extends StatefulWidget {
   const WorkingStatusManagementScreen({super.key});
@@ -200,10 +201,11 @@ class _DashboardContentState extends State<DashboardContent> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: IconButton(
+                    padding: EdgeInsets.zero,
                     icon: SvgPicture.asset(
                       'images/ic_farm_edit.svg',
-                      width: 15,
-                      height: 15,
+                      width: 14,
+                      height: 14,
                       color: Colors.blue,
                     ),
                     tooltip: 'Edit Status',
@@ -359,15 +361,8 @@ class _DashboardContentState extends State<DashboardContent> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Expanded(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: Image.asset(
-                  'images/image_farm_nothing_remains.png',
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ),
+            Image.asset('images/image_farm_nothing_remains.png', height: 150),
+
             const SizedBox(height: 24),
             Text(
               "No working statuses available",
@@ -381,7 +376,7 @@ class _DashboardContentState extends State<DashboardContent> {
             const SizedBox(height: 8),
             Text(
               "Add your first working status to get started",
-              style: const TextStyle(fontSize: 16, color: Colors.grey),
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
               textAlign: TextAlign.center,
             ),
           ],
@@ -415,7 +410,7 @@ class _DashboardContentState extends State<DashboardContent> {
             const Text(
               "No working statuses found matching your filters",
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 14,
                 fontWeight: FontWeight.bold,
                 color: Colors.black87,
               ),
@@ -615,40 +610,61 @@ class _DashboardContentState extends State<DashboardContent> {
                                 },
                               ),
                               const SizedBox(height: 12),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                  onPressed: _applyFilters,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 20,
-                                      vertical: 16,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: _applyFilters,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green,
+                                        padding: const EdgeInsets.symmetric(vertical: 16),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                      child: Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    SvgPicture.asset(
+      'images/ic_farm_filter.svg',
+      height: 12,
+      width: 12,
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    ),
+    const SizedBox(width: 4),
+    const Text(
+      "APPLY",
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
+    ),
+  ],
+),
                                     ),
                                   ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      SvgPicture.asset(
-                                        'images/ic_farm_filter.svg',
-                                        height: 20,
-                                        width: 20,
-                                        color: Colors.white,
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          _searchController.clear();
+                                          _tempSearchQuery = '';
+                                          _searchQuery = '';
+                                          _tempSelectedButtonStatus = null;
+                                          _selectedButtonStatus = null;
+                                          _currentPage = 1;
+                                          if (_isGridLoaded) _updatePlutoGridRows();
+                                        });
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.red,
+                                        padding: const EdgeInsets.symmetric(vertical: 16),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                       ),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        "APPLY FILTERS",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
+                                      child: const Text("REMOVE FILTER", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
+                                    ),
                                   ),
-                                ),
+                                ],
                               ),
                             ],
                           )
@@ -757,38 +773,61 @@ class _DashboardContentState extends State<DashboardContent> {
                               const SizedBox(width: 12),
                               Expanded(
                                 flex: 1,
-                                child: ElevatedButton(
-                                  onPressed: _applyFilters,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 20,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(5),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SvgPicture.asset(
-                                        'images/ic_farm_filter.svg',
-                                        height: 12,
-                                        width: 12,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        "APPLY FILTERS",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: _applyFilters,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.green,
+                                          padding: const EdgeInsets.symmetric(vertical: 20),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
                                         ),
+                                        child: Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    SvgPicture.asset(
+      'images/ic_farm_filter.svg',
+      height: 12,
+      width: 12,
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    ),
+    const SizedBox(width: 4),
+    const Text(
+      "APPLY",
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
+    ),
+  ],
+),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _searchController.clear();
+                                            _tempSearchQuery = '';
+                                            _searchQuery = '';
+                                            _tempSelectedButtonStatus = null;
+                                            _selectedButtonStatus = null;
+                                            _currentPage = 1;
+                                            if (_isGridLoaded) _updatePlutoGridRows();
+                                          });
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                          padding: const EdgeInsets.symmetric(vertical: 20),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                                        ),
+                                        child: const Text("CLEAR", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -796,12 +835,19 @@ class _DashboardContentState extends State<DashboardContent> {
                     const SizedBox(height: 10),
 
                     // Grid Section
-                    SizedBox(
+                    Container(
+                      height: _isLoading
+                          ? 300
+                          : (_paginatedStatuses.length * rowHeight) +
+                                headerHeight,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                       child: _isLoading
-                          ? const Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.green,
-                              ),
+                          ? const LoadingOverlay(
+                              text: 'Loading...',
+                              showBackdrop: false,
                             )
                           : _workingStatuses.isEmpty
                           ? _buildEmptyState()

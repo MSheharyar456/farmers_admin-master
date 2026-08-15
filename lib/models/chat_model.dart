@@ -1,65 +1,78 @@
-class ChatUser {
-  final String userId;
-  final String userName;
-  final String lastMessage;
-  final int lastTime;
+class AdminChatUser {
+  final String id;
+  final String username;
+  final String email;
+  final String profileImage;
+  final String profileColor;
+  final String? lastMessage;
+  final DateTime? lastMessageAt;
   final int unreadCount;
+  final bool isOnline;
 
-  ChatUser({
-    required this.userId,
-    required this.userName,
-    required this.lastMessage,
-    required this.lastTime,
+  AdminChatUser({
+    required this.id,
+    required this.username,
+    required this.email,
+    required this.profileImage,
+    required this.profileColor,
+    this.lastMessage,
+    this.lastMessageAt,
     this.unreadCount = 0,
+    this.isOnline = false,
   });
 
-  factory ChatUser.fromMap(Map<String, dynamic> map, {int unreadCount = 0}) {
-    return ChatUser(
-      userId: map['userId'] ?? '',
-      userName: map['userName'] ?? 'Unknown',
-      lastMessage: map['lastMessage'] ?? '',
-      lastTime: map['lastTime'] ?? 0,
-      unreadCount: unreadCount,
+  factory AdminChatUser.fromJson(Map<String, dynamic> json) {
+    return AdminChatUser(
+      id: json['id']?.toString() ?? '',
+      username: json['username']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      profileImage: json['profileImage']?.toString() ?? 'default_pfp.jpg',
+      profileColor: json['profileColor']?.toString() ?? '#DAD721',
+      lastMessage: json['lastMessage']?.toString(),
+      lastMessageAt: json['lastMessageAt'] != null
+          ? DateTime.tryParse(json['lastMessageAt'].toString())?.toLocal()
+          : null,
+      unreadCount: json['unreadCount'] is int
+          ? json['unreadCount']
+          : int.tryParse(json['unreadCount']?.toString() ?? '0') ?? 0,
+      isOnline: json['isOnline'] == true,
+    );
+  }
+
+  AdminChatUser copyWith({
+    String? lastMessage,
+    DateTime? lastMessageAt,
+    int? unreadCount,
+    bool? isOnline,
+  }) {
+    return AdminChatUser(
+      id: id,
+      username: username,
+      email: email,
+      profileImage: profileImage,
+      profileColor: profileColor,
+      lastMessage: lastMessage ?? this.lastMessage,
+      lastMessageAt: lastMessageAt ?? this.lastMessageAt,
+      unreadCount: unreadCount ?? this.unreadCount,
+      isOnline: isOnline ?? this.isOnline,
     );
   }
 }
 
-class ChatMessage {
+class AdminChatMessage {
   final String id;
   final String senderId;
-  final String senderName;
-  final String text;
-  final int timestamp;
-  final bool seen;
+  final String receiverId;
+  final String message; // Decrypted message
+  final bool isRead;
+  final DateTime createdAt;
 
-  ChatMessage({
+  AdminChatMessage({
     required this.id,
     required this.senderId,
-    required this.senderName,
-    required this.text,
-    required this.timestamp,
-    required this.seen,
+    required this.receiverId,
+    required this.message,
+    required this.isRead,
+    required this.createdAt,
   });
-
-  factory ChatMessage.fromMap(Map<String, dynamic> map) {
-    return ChatMessage(
-      id: map['id'] ?? '',
-      senderId: map['senderId'] ?? '',
-      senderName: map['senderName'] ?? '',
-      text: map['text'] ?? '',
-      timestamp: map['timestamp'] ?? 0,
-      seen: map['seen'] ?? false,
-    );
-  }
-
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'senderId': senderId,
-      'senderName': senderName,
-      'text': text,
-      'timestamp': timestamp,
-      'seen': seen,
-    };
-  }
 }

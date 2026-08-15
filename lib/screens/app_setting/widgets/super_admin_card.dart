@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,7 +9,9 @@ import 'package:farmers_admin/config/api_config.dart';
 import 'package:farmers_admin/services/admin_server_auth_service.dart';
 
 class SuperAdminCard extends StatefulWidget {
-  const SuperAdminCard({super.key});
+  final ValueChanged<bool>? onLoadingChanged;
+
+  const SuperAdminCard({super.key, this.onLoadingChanged});
 
   @override
   State<SuperAdminCard> createState() => _SuperAdminCardState();
@@ -25,7 +28,6 @@ class _SuperAdminCardState extends State<SuperAdminCard> {
   bool _isLoading = true;
   bool _isSaving = false;
 
-  // Visibility toggles
   bool _showPassword = false;
   bool _showPasskey = false;
   bool _showOptionkey = false;
@@ -45,25 +47,24 @@ class _SuperAdminCardState extends State<SuperAdminCard> {
     super.dispose();
   }
 
-  // Retry mechanism - keeps checking until data is available
   Future<void> _fetchAdminDataWithRetry() async {
     int attempts = 0;
-    const maxAttempts = 20; // Try for 10 seconds (20 * 500ms)
-    
+    const maxAttempts = 20;
+
     _retryTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) async {
       attempts++;
-      
+
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('user_id');
       final userEmail = prefs.getString('user_email');
       final userName = prefs.getString('user_name');
-      
-      debugPrint("SuperAdminCard: Attempt $attempts - user_id=$userId, email=$userEmail, name=$userName");
+
+      debugPrint(
+        "SuperAdminCard: Attempt $attempts - user_id=$userId, email=$userEmail, name=$userName",
+      );
 
       if (userId != null && userId.isNotEmpty) {
-        // Data found! Stop timer and update UI
         timer.cancel();
-        
         if (mounted) {
           setState(() {
             _uid = userId;
@@ -72,17 +73,16 @@ class _SuperAdminCardState extends State<SuperAdminCard> {
             _isLoading = false;
           });
         }
-        debugPrint("SuperAdminCard: Data loaded successfully!");
+        widget.onLoadingChanged?.call(false);
         return;
       }
-      
+
       if (attempts >= maxAttempts) {
-        // Give up after max attempts
         timer.cancel();
         if (mounted) {
           setState(() => _isLoading = false);
         }
-        debugPrint("SuperAdminCard: Gave up after $maxAttempts attempts - no user data found");
+        widget.onLoadingChanged?.call(false);
       }
     });
   }
@@ -94,15 +94,13 @@ class _SuperAdminCardState extends State<SuperAdminCard> {
     setState(() => _isSaving = true);
 
     try {
-      // Get auth token from service
       final authService = Provider.of<AdminServerAuthService>(context, listen: false);
       final token = authService.authToken;
-      
+
       if (token == null) {
         throw Exception('Not authenticated');
       }
 
-      // Prepare update payload
       final Map<String, dynamic> updates = {
         "username": _usernameController.text.trim(),
       };
@@ -115,29 +113,31 @@ class _SuperAdminCardState extends State<SuperAdminCard> {
         updates["optionkey"] = _optionkeyController.text.trim();
       }
 
-      // Call backend API
-      final dio = Dio(BaseOptions(
-        baseUrl: apiBaseUrl,
-        connectTimeout: const Duration(seconds: 30),
-        receiveTimeout: const Duration(seconds: 30),
-      ));
-      
-      dio.interceptors.add(InterceptorsWrapper(
-        onRequest: (options, handler) {
-          options.headers['Authorization'] = 'Bearer $token';
-          options.headers['X-Authorization'] = 'Bearer $token';
-          return handler.next(options);
-        },
-      ));
+      final dio = Dio(
+        BaseOptions(
+          baseUrl: apiBaseUrl,
+          connectTimeout: const Duration(seconds: 30),
+          receiveTimeout: const Duration(seconds: 30),
+        ),
+      );
+
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            options.headers['Authorization'] = 'Bearer $token';
+            options.headers['X-Authorization'] = 'Bearer $token';
+            return handler.next(options);
+          },
+        ),
+      );
 
       final res = await dio.patch('/admin/me', data: updates);
-      
+
       if (res.data == null || res.data['success'] != true) {
         final msg = res.data?['message'] as String? ?? 'Update failed';
         throw Exception(msg);
       }
 
-      // Also update SharedPreferences for username
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('user_name', _usernameController.text.trim());
 
@@ -177,337 +177,156 @@ class _SuperAdminCardState extends State<SuperAdminCard> {
     }
   }
 
-
-
   @override
-
   Widget build(BuildContext context) {
-
     return Card(
-
       color: Colors.white,
-
       elevation: 4,
-
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-
       child: Padding(
-
         padding: const EdgeInsets.all(20),
-
-        child: _isLoading
-
-            ? const Center(child: CircularProgressIndicator())
-
-            : Form(
-
-                key: _formKey,
-
-                child: Column(
-
-                  crossAxisAlignment: CrossAxisAlignment.start,
-
-                  children: [
-
-                    const Text(
-
-                      "Super Admin Profile",
-
-                      style: TextStyle(
-
-                        fontSize: 18,
-
-                        fontWeight: FontWeight.bold,
-
-                      ),
-
-                    ),
-
-                    const SizedBox(height: 20),
-
-
-
-                    _buildTextField(
-
-                      "Username",
-
-                      _usernameController,
-
-                      Icons.person,
-
-                    ),
-
-                    const SizedBox(height: 15),
-
-                    _buildTextField(
-
-                      "Gmail",
-
-                      _emailController,
-
-                      Icons.email,
-
-                      enabled: false,
-
-                    ),
-
-                    // const SizedBox(height: 15),
-
-                    // _buildTextField(
-
-                    //   "New Password",
-
-                    //   _passwordController,
-
-                    //   Icons.lock,
-
-                    //   isObscure: true,
-
-                    //   isVisible: _showPassword,
-
-                    //   onToggleVisibility: () {
-
-                    //     setState(() {
-
-                    //       _showPassword = !_showPassword;
-
-                    //     });
-
-                    //   },
-
-                    //   hint: "Leave empty to keep current",
-
-                    // ),
-
-                    const SizedBox(height: 15),
-
-                    _buildTextField(
-
-                      "New Passkey",
-
-                      _passkeyController,
-
-                      Icons.vpn_key,
-
-                      isObscure: true,
-
-                      isVisible: _showPasskey,
-
-                      onToggleVisibility: () {
-
-                        setState(() {
-
-                          _showPasskey = !_showPasskey;
-
-                        });
-
-                      },
-
-                      hint: "Leave empty to keep current",
-
-                    ),
-
-                    const SizedBox(height: 15),
-
-                    _buildTextField(
-
-                      "New Optionkey",
-
-                      _optionkeyController,
-
-                      Icons.settings_remote,
-
-                      isObscure: true,
-
-                      isVisible: _showOptionkey,
-
-                      onToggleVisibility: () {
-
-                        setState(() {
-
-                          _showOptionkey = !_showOptionkey;
-
-                        });
-
-                      },
-
-                      hint: "Leave empty to keep current",
-
-                    ),
-
-
-
-                    const SizedBox(height: 30),
-
-                    SizedBox(
-
-                      width: double.infinity,
-
-                      height: 45,
-
-                      child: ElevatedButton(
-
-                        onPressed: _isSaving ? null : _updateProfile,
-
-                        style: ElevatedButton.styleFrom(
-
-                          backgroundColor: Colors.green,
-
-                          foregroundColor: Colors.white,
-
-                          shape: RoundedRectangleBorder(
-
-                            borderRadius: BorderRadius.circular(8),
-
-                          ),
-
-                        ),
-
-                        child: _isSaving
-
-                            ? const CircularProgressIndicator(
-
-                                color: Colors.white,
-
-                              )
-
-                            : const Text("Save Changes"),
-
-                      ),
-
-                    ),
-
-                  ],
-
+        child: AbsorbPointer(
+          absorbing: _isLoading,
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Super Admin Profile",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-
-              ),
-
+                const SizedBox(height: 20),
+                _buildTextField(
+                  "Username",
+                  _usernameController,
+                  Icons.person,
+                ),
+                const SizedBox(height: 15),
+                _buildTextField(
+                  "Gmail",
+                  _emailController,
+                  Icons.email,
+                  enabled: false,
+                ),
+                const SizedBox(height: 15),
+                _buildTextField(
+                  "New Passkey",
+                  _passkeyController,
+                  Icons.vpn_key,
+                  isObscure: true,
+                  isVisible: _showPasskey,
+                  onToggleVisibility: () {
+                    setState(() {
+                      _showPasskey = !_showPasskey;
+                    });
+                  },
+                  hint: "Leave empty to keep current",
+                ),
+                const SizedBox(height: 15),
+                _buildTextField(
+                  "New Optionkey",
+                  _optionkeyController,
+                  Icons.settings_remote,
+                  isObscure: true,
+                  isVisible: _showOptionkey,
+                  onToggleVisibility: () {
+                    setState(() {
+                      _showOptionkey = !_showOptionkey;
+                    });
+                  },
+                  hint: "Leave empty to keep current",
+                ),
+                const SizedBox(height: 30),
+                SizedBox(
+                  width: double.infinity,
+                  height: 45,
+                  child: ElevatedButton(
+                    onPressed: _isSaving ? null : _updateProfile,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: _isSaving
+                        ? const CircularProgressIndicator(
+                            color: Colors.white,
+                          )
+                        : const Text("Save Changes"),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-
     );
-
   }
-
-
 
   Widget _buildTextField(
-
     String label,
-
     TextEditingController controller,
-
     IconData icon, {
-
     bool isObscure = false,
-
     bool enabled = true,
-
     String? hint,
-
     bool isVisible = false,
-
     VoidCallback? onToggleVisibility,
-
   }) {
-
     return Column(
-
       crossAxisAlignment: CrossAxisAlignment.start,
-
       children: [
-
         Text(
-
           label,
-
           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-
         ),
-
         const SizedBox(height: 5),
-
         TextFormField(
-
           controller: controller,
-
           obscureText: isObscure && !isVisible,
-
           enabled: enabled,
-
           decoration: InputDecoration(
-
             hintText: hint,
-
             prefixIcon: Icon(
-
               icon,
-
               size: 18,
-
               color: const Color.fromARGB(255, 235, 225, 225),
-
             ),
-
             suffixIcon: isObscure
-
                 ? IconButton(
-
                     icon: Icon(
-
                       isVisible ? Icons.visibility : Icons.visibility_off,
-
                       color: Colors.grey,
-
                     ),
-
                     onPressed: onToggleVisibility,
-
                   )
-
                 : null,
-
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-
             enabledBorder: OutlineInputBorder(
-
               borderRadius: BorderRadius.circular(8),
-
-              borderSide: BorderSide(color: Colors.green),
-
+              borderSide: const BorderSide(color: Colors.green),
             ),
-
             contentPadding: const EdgeInsets.symmetric(
-
               horizontal: 10,
-
               vertical: 0,
-
             ),
-
           ),
-
           validator: (value) {
-
             if (label == 'Username' || label == 'Gmail') {
-
-              if (value == null || value.isEmpty)
-
+              if (value == null || value.isEmpty) {
                 return 'This field is required';
-
+              }
             }
-
             return null;
-
           },
-
         ),
-
       ],
-
     );
-
   }
-
 }
 

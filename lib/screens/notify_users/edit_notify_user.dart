@@ -50,7 +50,7 @@ class _EditNotifyUserScreenState extends State<EditNotifyUserScreen> {
 
     // Initialize controllers based on mode
     if (widget.isAddMode) {
-      _titleController = TextEditingController();
+      _titleController = TextEditingController(text: 'تطبيق محصولك');
       _messageController = TextEditingController();
       _userNameController = TextEditingController(text: widget.userName ?? '');
       _userEmailController = TextEditingController(

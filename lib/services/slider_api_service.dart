@@ -154,4 +154,5 @@ class SliderApiService {
       url: data['url'] as String? ?? '',
     );
   }
+
 }

@@ -2,6 +2,9 @@ import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/crash_report_model.dart';
 import 'package:farmers_admin/services/admin_crash_reports_api_service.dart';
+import 'package:farmers_admin/widgets/compact_action_tile.dart';
+import 'package:farmers_admin/widgets/delete_dialog.dart';
+import 'package:farmers_admin/widgets/loading_overlay.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -41,7 +44,8 @@ class _CrashReportsContentState extends State<CrashReportsContent> {
   final TextEditingController _searchController = TextEditingController();
   int _currentPage = 1;
   int _rowsPerPage = 10;
-
+  final double rowHeight = 40;
+  final double headerHeight = 50;
   @override
   void initState() {
     super.initState();
@@ -93,10 +97,17 @@ class _CrashReportsContentState extends State<CrashReportsContent> {
     });
   }
 
+  int _safeCurrentPage(int totalRows) {
+    if (totalRows <= 0) return 1;
+    final totalPages = (totalRows / _rowsPerPage).ceil().clamp(1, 999999);
+    return _currentPage.clamp(1, totalPages);
+  }
+
   void _showStackDialog(CrashReportModel crash) {
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: Container(
           constraints: const BoxConstraints(maxWidth: 700, maxHeight: 560),
@@ -178,31 +189,13 @@ class _CrashReportsContentState extends State<CrashReportsContent> {
   }
 
   void _confirmDelete(int id) {
-    showDialog(
+    showDeleteDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete crash report'),
-        content: const Text(
-          'Remove this crash report from the server? This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _deleteCrash(id);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      title: 'Delete crash report',
+      message: 'Are you sure you want to delete this crash report?',
+      onConfirm: () => _deleteCrash(id),
+      confirmText: 'Yes, Delete',
+      cancelText: 'Cancel',
     );
   }
 
@@ -234,36 +227,47 @@ class _CrashReportsContentState extends State<CrashReportsContent> {
         title: 'No',
         field: 'no',
         type: PlutoColumnType.number(),
-        width: 50,
+        width: 60,
         enableEditingMode: false,
       ),
       PlutoColumn(
-        title: 'Date',
-        field: 'date',
+        title: 'Device',
+        field: 'deviceName',
         type: PlutoColumnType.text(),
-        width: isMobile ? 110 : 130,
+        width: isMobile ? 120 : 150,
         enableEditingMode: false,
+        renderer: (ctx) {
+          final v = ctx.cell.value?.toString() ?? '';
+          return Tooltip(
+            message: v.isEmpty ? '—' : v,
+            child: Text(
+              v.isEmpty ? '—' : v,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: const TextStyle(fontSize: 12),
+            ),
+          );
+        },
       ),
       PlutoColumn(
-        title: 'Platform',
+        title: 'OS',
         field: 'platform',
         type: PlutoColumnType.text(),
-        width: 80,
+        width: isMobile ? 100 : 110,
         enableEditingMode: false,
       ),
-      if (!isMobile)
-        PlutoColumn(
-          title: 'App version',
-          field: 'version',
-          type: PlutoColumnType.text(),
-          width: 100,
-          enableEditingMode: false,
-        ),
+      PlutoColumn(
+        title: 'App version',
+        field: 'version',
+        type: PlutoColumnType.text(),
+        width: 130,
+        enableEditingMode: false,
+      ),
       PlutoColumn(
         title: 'Fatal',
         field: 'fatal',
         type: PlutoColumnType.text(),
-        width: 60,
+        width: 80,
         enableEditingMode: false,
         renderer: (ctx) {
           final fatal = ctx.cell.value == true || ctx.cell.value == 'Yes';
@@ -286,19 +290,18 @@ class _CrashReportsContentState extends State<CrashReportsContent> {
           );
         },
       ),
-      if (!isMobile)
-        PlutoColumn(
-          title: 'User ID',
-          field: 'userId',
-          type: PlutoColumnType.text(),
-          width: 100,
-          enableEditingMode: false,
-        ),
+      // PlutoColumn(
+      //   title: 'User ID',
+      //   field: 'userId',
+      //   type: PlutoColumnType.text(),
+      //   width: isMobile ? 120 : 140,
+      //   enableEditingMode: false,
+      // ),
       PlutoColumn(
         title: 'Message',
         field: 'message',
         type: PlutoColumnType.text(),
-        width: isMobile ? 140 : 220,
+        width: isMobile ? 180 : 320,
         enableEditingMode: false,
         renderer: (ctx) {
           final v = ctx.cell.value?.toString() ?? '';
@@ -314,10 +317,17 @@ class _CrashReportsContentState extends State<CrashReportsContent> {
         },
       ),
       PlutoColumn(
+        title: 'Date',
+        field: 'date',
+        type: PlutoColumnType.text(),
+        width: isMobile ? 120 : 150,
+        enableEditingMode: false,
+      ),
+      PlutoColumn(
         title: 'Actions',
         field: 'actions',
         type: PlutoColumnType.text(),
-        width: 90,
+        width: 100,
         enableEditingMode: false,
         enableSorting: false,
         renderer: (ctx) {
@@ -326,17 +336,18 @@ class _CrashReportsContentState extends State<CrashReportsContent> {
           return Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                icon: const Icon(Icons.visibility, size: 16, color: Colors.green),
+              CompactActionTile(
+                backgroundColor: Colors.green.shade50,
+                iconColor: Colors.green,
+                icon: Icons.visibility,
                 tooltip: 'View stack',
                 onPressed: () => _showStackDialog(data),
               ),
-              IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                icon: const Icon(Icons.delete, size: 16, color: Colors.red),
+              const SizedBox(width: 8),
+              CompactActionTile(
+                backgroundColor: Colors.red.shade50,
+                iconColor: Colors.red,
+                icon: Icons.delete,
                 tooltip: 'Delete',
                 onPressed: () => _confirmDelete(data.id),
               ),
@@ -360,10 +371,13 @@ class _CrashReportsContentState extends State<CrashReportsContent> {
     final filtered = _crashes.where(_matchesFilters).toList();
     final totalRows = filtered.length;
     final totalPages = totalRows == 0 ? 1 : (totalRows / _rowsPerPage).ceil();
-    final start = (_currentPage - 1) * _rowsPerPage;
+    final safeCurrentPage = _safeCurrentPage(totalRows);
+    final start = (safeCurrentPage - 1) * _rowsPerPage;
     final end = (start + _rowsPerPage).clamp(0, totalRows);
-    final pageItems = totalRows == 0 ? <CrashReportModel>[] : filtered.sublist(start, end);
-
+    final pageItems = totalRows == 0
+        ? <CrashReportModel>[]
+        : filtered.sublist(start, end);
+    final double gridHeight = (pageItems.length * rowHeight) + headerHeight;
     final rows = pageItems.asMap().entries.map((e) {
       final i = start + e.key + 1;
       final c = e.value;
@@ -374,8 +388,11 @@ class _CrashReportsContentState extends State<CrashReportsContent> {
           'platform': PlutoCell(value: c.platform.isEmpty ? '—' : c.platform),
           'version': PlutoCell(value: c.versionLabel),
           'fatal': PlutoCell(value: c.fatal),
-          'userId': PlutoCell(value: c.shortUserId),
+          // 'userId': PlutoCell(value: c.shortUserId),
           'message': PlutoCell(value: c.shortMessage),
+          'deviceName': PlutoCell(
+            value: c.deviceName.isEmpty ? '—' : c.deviceName,
+          ),
           'actions': PlutoCell(value: ''),
           'crashData': PlutoCell(value: c),
         },
@@ -396,25 +413,65 @@ class _CrashReportsContentState extends State<CrashReportsContent> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Crash Reports',
-                      style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                            color: Colors.black,
-                            fontWeight: FontWeight.w900,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Crash Reports',
+                                style: Theme.of(context).textTheme.headlineLarge
+                                    ?.copyWith(
+                                      color: Colors.black,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Dashboard / Crash Reports',
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(
+                                      color: Colors.grey,
+                                      fontSize: 10,
+                                    ),
+                              ),
+                            ],
                           ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Dashboard / Crash Reports',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: Colors.grey,
-                            fontSize: 10,
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: _loadCrashes,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 16,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            elevation: 0,
                           ),
+                          icon: _loading
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh),
+                          label: Text(_loading ? 'Loading...' : 'Reload'),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 16),
                     Row(
                       children: [
                         Expanded(
+                          flex: 3,
                           child: SizedBox(
                             height: 38,
                             child: TextField(
@@ -427,104 +484,433 @@ class _CrashReportsContentState extends State<CrashReportsContent> {
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 focusedBorder: const OutlineInputBorder(
-                                  borderSide: BorderSide(color: Colors.green, width: 1),
+                                  borderSide: BorderSide(
+                                    color: Colors.green,
+                                    width: 1,
+                                  ),
                                 ),
                               ),
-                              onChanged: (v) => setState(() => _searchQuery = v),
+                              onChanged: (v) =>
+                                  setState(() => _searchQuery = v),
                               onSubmitted: (_) => _applyFilters(),
                             ),
                           ),
                         ),
                         const SizedBox(width: 12),
-                        ElevatedButton(
-                          onPressed: _applyFilters,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-                          ),
+                        Expanded(
+                          flex: 1,
                           child: Row(
-                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              SvgPicture.asset(
-                                'images/ic_farm_filter.svg',
-                                height: 12,
-                                width: 12,
-                                colorFilter: const ColorFilter.mode(
-                                  Colors.white,
-                                  BlendMode.srcIn,
+                              Expanded(
+                                child: SizedBox(
+                                  height: 38,
+                                  child: ElevatedButton(
+                                    onPressed: _applyFilters,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(5),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        SvgPicture.asset(
+                                          'images/ic_farm_filter.svg',
+                                          height: 12,
+                                          width: 12,
+                                          colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        const Text(
+                                          "APPLY",
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              const Text(
-                                'FILTER',
-                                style: TextStyle(color: Colors.white, fontSize: 10),
+                              Expanded(
+                                child: SizedBox(
+                                  height: 38,
+                                  child: ElevatedButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _searchController.clear();
+                                        _searchQuery = '';
+                                        _appliedSearchQuery = '';
+                                        _currentPage = 1;
+                                      });
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.red,
+                                      padding: const EdgeInsets.symmetric(vertical: 20),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(5),
+                                      ),
+                                    ),
+                                    child: const Text("CLEAR", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          onPressed: _loadCrashes,
-                          icon: const Icon(Icons.refresh),
-                          tooltip: 'Refresh',
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
                     if (_loading)
-                      const Padding(
-                        padding: EdgeInsets.all(48),
-                        child: Center(child: CircularProgressIndicator()),
+                      Container(
+                        height: 300.0,
+
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Padding(
+                          padding: EdgeInsets.all(48),
+                          child: Center(
+                            child: LoadingOverlay(
+                              text: 'Loading...',
+                              showBackdrop: false,
+                            ),
+                          ),
+                        ),
                       )
                     else if (filtered.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.all(48),
+                      SizedBox(
+                        height: 250,
                         child: Center(
-                          child: Text(
-                            _crashes.isEmpty
-                                ? 'No crash reports yet'
-                                : 'No crashes match your search',
-                            style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                          child: Column(
+                            children: [
+                              Image.asset(
+                                'images/image_farm_nothing_remains.png',
+                                height: 150,
+                              ),
+                              Text(
+                                _crashes.isEmpty
+                                    ? 'No crash reports yet'
+                                    : 'No crashes match your search',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       )
                     else
                       SizedBox(
-                        height: 400,
+                        height: gridHeight,
                         child: PlutoGrid(
+                          key: ValueKey(
+                            '$_currentPage-$_rowsPerPage-$_appliedSearchQuery',
+                          ),
                           columns: _columns(isMobile),
                           rows: rows,
                           configuration: PlutoGridConfiguration(
+                            columnSize: const PlutoGridColumnSizeConfig(
+                              autoSizeMode: PlutoAutoSizeMode.scale,
+                            ),
                             style: PlutoGridStyleConfig(
-                              gridBorderColor: Colors.grey.shade300,
-                              borderColor: Colors.grey.shade300,
-                              activatedBorderColor: Colors.green,
                               rowHeight: 40,
-                              columnHeight: 44,
+                              columnTextStyle: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                              cellTextStyle: const TextStyle(fontSize: 12),
+                              enableColumnBorderHorizontal: true,
+                              enableCellBorderHorizontal: true,
+                              enableColumnBorderVertical: true,
+                              enableRowColorAnimation: false,
+                              oddRowColor: Colors.white,
+                              evenRowColor: Colors.grey.shade50,
                             ),
                           ),
                           onLoaded: (_) {},
                         ),
                       ),
                     if (!_loading && filtered.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          IconButton(
-                            onPressed: _currentPage > 1
-                                ? () => setState(() => _currentPage--)
-                                : null,
-                            icon: const Icon(Icons.chevron_left),
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          vertical: isMobile ? 12 : 8,
+                          horizontal: isMobile ? 4 : 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.only(
+                            bottomLeft: Radius.circular(10),
+                            bottomRight: Radius.circular(10),
                           ),
-                          Text('Page $_currentPage of $totalPages ($totalRows total)'),
-                          IconButton(
-                            onPressed: _currentPage < totalPages
-                                ? () => setState(() => _currentPage++)
-                                : null,
-                            icon: const Icon(Icons.chevron_right),
-                          ),
-                        ],
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.05),
+                              blurRadius: 5,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: isMobile
+                            ? Column(
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.arrow_back_ios_new,
+                                          size: 14,
+                                          color: Colors.grey,
+                                        ),
+                                        onPressed: safeCurrentPage > 1
+                                            ? () => setState(
+                                                () => _currentPage =
+                                                    safeCurrentPage - 1,
+                                              )
+                                            : null,
+                                      ),
+                                      Text(
+                                        '$safeCurrentPage / $totalPages',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w500,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.arrow_forward_ios,
+                                          size: 14,
+                                          color: Colors.grey,
+                                        ),
+                                        onPressed: safeCurrentPage < totalPages
+                                            ? () => setState(
+                                                () => _currentPage =
+                                                    safeCurrentPage + 1,
+                                              )
+                                            : null,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Container(
+                                        height: 34,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(
+                                            color: Colors.grey.shade300,
+                                          ),
+                                          borderRadius: BorderRadius.only(
+                                            bottomLeft: Radius.circular(10),
+                                            bottomRight: Radius.circular(10),
+                                          ),
+                                          color: Colors.white,
+                                        ),
+                                        child: DropdownButtonHideUnderline(
+                                          child: DropdownButton<int>(
+                                            value: _rowsPerPage,
+                                            dropdownColor: Colors.white,
+                                            icon: const Icon(
+                                              Icons.keyboard_arrow_down,
+                                              size: 14,
+                                            ),
+                                            items: [5, 10, 20, 50]
+                                                .map(
+                                                  (e) => DropdownMenuItem(
+                                                    value: e,
+                                                    child: Text(
+                                                      '$e',
+                                                      style: const TextStyle(
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                )
+                                                .toList(),
+                                            onChanged: (val) {
+                                              if (val != null) {
+                                                setState(() {
+                                                  _rowsPerPage = val;
+                                                  _currentPage = 1;
+                                                });
+                                              }
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      const Text(
+                                        "/ Page",
+                                        style: TextStyle(
+                                          color: Colors.black54,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.arrow_back_ios_new,
+                                      size: 14,
+                                      color: Colors.grey,
+                                    ),
+                                    onPressed: safeCurrentPage > 1
+                                        ? () => setState(
+                                            () => _currentPage =
+                                                safeCurrentPage - 1,
+                                          )
+                                        : null,
+                                  ),
+                                  ...List.generate(
+                                    totalPages > 7 ? 7 : totalPages,
+                                    (index) {
+                                      int pageNum;
+                                      if (totalPages <= 7) {
+                                        pageNum = index + 1;
+                                      } else if (safeCurrentPage <= 4) {
+                                        pageNum = index + 1;
+                                      } else if (safeCurrentPage >=
+                                          totalPages - 3) {
+                                        pageNum = totalPages - 6 + index;
+                                      } else {
+                                        pageNum = safeCurrentPage - 3 + index;
+                                      }
+
+                                      final isActive =
+                                          pageNum == safeCurrentPage;
+
+                                      return GestureDetector(
+                                        onTap: () {
+                                          setState(
+                                            () => _currentPage = pageNum,
+                                          );
+                                        },
+                                        child: Container(
+                                          margin: const EdgeInsets.symmetric(
+                                            horizontal: 2,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 14,
+                                            vertical: 5,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: isActive
+                                                ? const Color(0xFFE8F5E9)
+                                                : Colors.white,
+                                            border: Border.all(
+                                              color: isActive
+                                                  ? const Color(0xFF4CAF50)
+                                                  : Colors.grey.shade300,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              5,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '$pageNum',
+                                            style: TextStyle(
+                                              color: isActive
+                                                  ? const Color(0xFF4CAF50)
+                                                  : Colors.black87,
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.arrow_forward_ios,
+                                      size: 14,
+                                      color: Colors.grey,
+                                    ),
+                                    onPressed: safeCurrentPage < totalPages
+                                        ? () => setState(
+                                            () => _currentPage =
+                                                safeCurrentPage + 1,
+                                          )
+                                        : null,
+                                  ),
+                                  const SizedBox(width: 20),
+                                  Row(
+                                    children: [
+                                      Container(
+                                        height: 34,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(
+                                            color: Colors.grey.shade300,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            5,
+                                          ),
+                                          color: Colors.white,
+                                        ),
+                                        child: DropdownButtonHideUnderline(
+                                          child: DropdownButton<int>(
+                                            value: _rowsPerPage,
+                                            icon: const Icon(
+                                              Icons.keyboard_arrow_down,
+                                              size: 14,
+                                            ),
+                                            items: [5, 10, 20, 50]
+                                                .map(
+                                                  (e) => DropdownMenuItem(
+                                                    value: e,
+                                                    child: Text(
+                                                      '$e',
+                                                      style: const TextStyle(
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                )
+                                                .toList(),
+                                            onChanged: (val) {
+                                              if (val != null) {
+                                                setState(() {
+                                                  _rowsPerPage = val;
+                                                  _currentPage = 1;
+                                                });
+                                              }
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      const Text(
+                                        "/ Page",
+                                        style: TextStyle(
+                                          color: Colors.black54,
+                                          fontWeight: FontWeight.w500,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
                       ),
                     ],
                   ],

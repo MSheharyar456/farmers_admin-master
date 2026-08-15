@@ -55,6 +55,14 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
   bool _canEdit = true;
   bool _canDelete = true;
 
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   // Helper method to format display text
   String _formatDisplayText(String text) {
     if (text.isEmpty) return text;
@@ -77,6 +85,8 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
       'agriculturalTools': 'Agricultural Tools',
       'delivery': 'Delivery',
       'equipments': 'Equipments',
+      'machine': 'Machine',
+      'solar_panel': 'Solar Panel',
       'landServices': 'Land Services',
       'workerServices': 'Worker Services',
       'irrigation': 'Irrigation',
@@ -124,6 +134,8 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
     'Agricultural Tools': 'agriculturalTools',
     'Delivery': 'delivery',
     'Equipments': 'equipments',
+    'Machine': 'machine',
+    'Solar Panel': 'solar_panel',
     'Land Services': 'landServices',
     'Worker Services': 'workerServices',
     'Irrigation': 'irrigation',
@@ -343,7 +355,9 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
                         title: "Delete Post",
                         message: "Are you sure you want to delete this post?",
                         onConfirm: () async {
-                          await context.read<AdminPostService>().deletePost(postId as String);
+                          await context.read<AdminPostService>().deletePost(
+                            postId as String,
+                          );
                           if (mounted) _loadPosts();
                         },
                       );
@@ -485,11 +499,6 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
     if (newRows.isNotEmpty) stateManager.appendRows(newRows);
   }
 
-  @override
-  @override
-  void dispose() {
-    super.dispose();
-  }
 
   Widget _buildEmptyState() {
     final hasFilters =
@@ -509,15 +518,8 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Expanded(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: Image.asset(
-                  'images/image_farm_nothing_remains.png',
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ),
+            Image.asset('images/image_farm_nothing_remains.png', height: 150),
+
             const SizedBox(height: 24),
             const Text(
               "No sold posts available",
@@ -531,7 +533,7 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
             const SizedBox(height: 8),
             const Text(
               "Sold posts will appear here",
-              style: TextStyle(fontSize: 16, color: Colors.grey),
+              style: TextStyle(fontSize: 14, color: Colors.grey),
               textAlign: TextAlign.center,
             ),
           ],
@@ -568,7 +570,7 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
             const Text(
               "No sold posts found",
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 14,
                 fontWeight: FontWeight.bold,
                 color: Colors.black87,
               ),
@@ -877,43 +879,66 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
                               const SizedBox(width: 12),
                               Expanded(
                                 flex: 1,
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    // Filters are applied in real-time, button can be removed or used for other actions
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 20,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(5),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SvgPicture.asset(
-                                        'images/ic_farm_filter.svg',
-                                        height: 12,
-                                        width: 12,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        "APPLY FILTERS",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _currentPage = 1;
+                                            if (_isGridLoaded) _updatePlutoGridRows();
+                                          });
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.green,
+                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                                        ),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            SvgPicture.asset(
+                                              'images/ic_farm_filter.svg',
+                                              height: 12,
+                                              width: 12,
+                                              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            const Text(
+                                              "APPLY",
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _searchController.clear();
+                                            _searchQuery = '';
+                                            _selectedCategory = "All";
+                                            _currentPage = 1;
+                                            if (_isGridLoaded) _updatePlutoGridRows();
+                                          });
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                                        ),
+                                        child: const Text("CLEAR", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              // REMOVED THE "APPLY FILTERS" BUTTON - No longer needed!
                             ],
                           ),
                     const SizedBox(height: 10),

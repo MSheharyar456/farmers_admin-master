@@ -18,6 +18,7 @@ class UserModel {
   final int totalFollowersCount;
   final String? profileColor;
   final String? profileImage;
+  final bool isUserDisabled;
   final Map<String, dynamic> rawData;
 
   UserModel({
@@ -39,6 +40,7 @@ class UserModel {
     required this.totalFollowersCount,
     this.profileColor,
     this.profileImage,
+    this.isUserDisabled = false,
     required this.rawData,
   });
 
@@ -99,14 +101,17 @@ class UserModel {
     completeData['profile_color'] = profileColor;
     completeData['profileImage'] = profileImage;
     completeData['profile_image'] = profileImage;
+    final isUserDisabled = row['isUserDisabled'] == true || row['isUserDisabled'] == 1 || row['is_user_disabled'] == 1;
+    completeData['isUserDisabled'] = isUserDisabled;
     return UserModel(
       uid: id,
       userName: username,
       userEmail: email,
       dob: 'N/A',
-      status: isVerified ? 'Verified' : 'Unverified',
+      status: isUserDisabled ? 'Disabled' : (isVerified ? 'Verified' : 'Unverified'),
       userScore: null,
       isVerified: isVerified,
+      isUserDisabled: isUserDisabled,
       rawData: completeData,
       userLoginDate: loginDate,
       userFCMToken: null,

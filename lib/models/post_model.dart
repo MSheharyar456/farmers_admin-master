@@ -65,6 +65,8 @@ class Post {
   final String postUserMail;
   final String postUserName;
   final int postViews;
+  final int postWhatsappClicks;
+  final int postCallClicks;
   final String postUserImageColor;
   final String? postCurrencyCategory;
 
@@ -112,6 +114,8 @@ class Post {
     required this.postUserMail,
     required this.postUserName,
     this.postViews = 0,
+    this.postWhatsappClicks = 0,
+    this.postCallClicks = 0,
 
     // NEW FIELDS
     this.postNoLikes = 0,
@@ -224,6 +228,8 @@ class Post {
       postUserMail: map['postUserMail']?.toString() ?? '',
       postUserName: map['postUserName']?.toString() ?? 'Default',
       postViews: _parseToInt(map['postViews']) ?? 0,
+      postWhatsappClicks: _parseToInt(map['postWhatsappClicks']) ?? 0,
+      postCallClicks: _parseToInt(map['postCallClicks']) ?? 0,
 
       // NEW FIELDS
       postNoLikes: _parseToInt(map['postNoLikes']) ?? 0,
@@ -286,6 +292,8 @@ class Post {
       'postUserMail': postUserMail,
       'postUserName': postUserName,
       'postViews': postViews,
+      'postWhatsappClicks': postWhatsappClicks,
+      'postCallClicks': postCallClicks,
 
       // NEW FIELDS
       'postNoLikes': postNoLikes,

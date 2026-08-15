@@ -11,6 +11,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:farmers_admin/services/permission_helper.dart';
 import 'package:provider/provider.dart';
+import 'package:farmers_admin/widgets/loading_overlay.dart';
 
 class FarmingTipManagementScreen extends StatefulWidget {
   const FarmingTipManagementScreen({super.key});
@@ -140,10 +141,11 @@ class _FarmingContentState extends State<FarmingContent> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: IconButton(
+                    padding: EdgeInsets.zero,
                     icon: SvgPicture.asset(
                       'images/ic_farm_edit.svg',
-                      width: 15,
-                      height: 15,
+                      width: 14,
+                      height: 14,
                       color: Colors.blue,
                     ),
                     tooltip: 'Edit Tip',
@@ -182,10 +184,11 @@ class _FarmingContentState extends State<FarmingContent> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: IconButton(
+                    padding: EdgeInsets.zero,
                     icon: SvgPicture.asset(
                       'images/ic_farm_trash.svg',
-                      width: 15,
-                      height: 15,
+                      width: 14,
+                      height: 14,
                       color: Colors.red,
                     ),
                     tooltip: 'Delete Tip',
@@ -198,7 +201,8 @@ class _FarmingContentState extends State<FarmingContent> {
                             "Are you sure you want to clear this farming tip?",
                         onConfirm: () async {
                           try {
-                            final service = context.read<FarmingTipApiService>();
+                            final service = context
+                                .read<FarmingTipApiService>();
                             await service.updateFarmingTip(
                               farmingTipEnglish: '',
                               farmingTipArabic: '',
@@ -345,7 +349,7 @@ class _FarmingContentState extends State<FarmingContent> {
             const Text(
               "No farming tips available",
               style: TextStyle(
-                fontSize: 22,
+                fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: Colors.black87,
               ),
@@ -354,7 +358,7 @@ class _FarmingContentState extends State<FarmingContent> {
             const SizedBox(height: 8),
             const Text(
               "Add your first farming tip to get started",
-              style: TextStyle(fontSize: 16, color: Colors.grey),
+              style: TextStyle(fontSize: 14, color: Colors.grey),
               textAlign: TextAlign.center,
             ),
           ],
@@ -391,7 +395,7 @@ class _FarmingContentState extends State<FarmingContent> {
             const Text(
               "No farming tips found matching your filters",
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 14,
                 fontWeight: FontWeight.bold,
                 color: Colors.black87,
               ),
@@ -577,40 +581,67 @@ class _FarmingContentState extends State<FarmingContent> {
                                 },
                               ),
                               const SizedBox(height: 12),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                  onPressed: _applyFilters,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 20,
-                                      vertical: 16,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      SvgPicture.asset(
-                                        'images/ic_farm_filter.svg',
-                                        height: 20,
-                                        width: 20,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        "APPLY FILTERS",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: _applyFilters,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 20,
+                                          vertical: 16,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
                                         ),
                                       ),
-                                    ],
+                                      child: Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    SvgPicture.asset(
+      'images/ic_farm_filter.svg',
+      height: 12,
+      width: 12,
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    ),
+    const SizedBox(width: 4),
+    const Text(
+      "APPLY",
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
+    ),
+  ],
+),
+                                    ),
                                   ),
-                                ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          _searchController.clear();
+                                          _searchQuery = '';
+                                          _applyFilters();
+                                        });
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.red,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 20,
+                                          vertical: 16,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                      ),
+                                      child: const Text("REMOVE FILTER", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           )
@@ -661,38 +692,67 @@ class _FarmingContentState extends State<FarmingContent> {
                               const SizedBox(width: 12),
                               Expanded(
                                 flex: 1,
-                                child: ElevatedButton(
-                                  onPressed: _applyFilters,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 20,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(5),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SvgPicture.asset(
-                                        'images/ic_farm_filter.svg',
-                                        height: 12,
-                                        width: 12,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        "APPLY FILTERS",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: _applyFilters,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.green,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 20,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(5),
+                                          ),
                                         ),
+                                        child: Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    SvgPicture.asset(
+      'images/ic_farm_filter.svg',
+      height: 12,
+      width: 12,
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    ),
+    const SizedBox(width: 4),
+    const Text(
+      "APPLY",
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
+    ),
+  ],
+),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _searchController.clear();
+                                            _searchQuery = '';
+                                            _applyFilters();
+                                          });
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 20,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(5),
+                                          ),
+                                        ),
+                                        child: const Text("CLEAR", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -702,9 +762,18 @@ class _FarmingContentState extends State<FarmingContent> {
                     // Grid Section
                     SizedBox(
                       child: _isLoading
-                          ? const Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.green,
+                          ? Container(
+                              height: _isLoading
+                                  ? 300
+                                  : (_paginatedTips.length * rowHeight) +
+                                        headerHeight,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const LoadingOverlay(
+                                text: 'Loading...',
+                                showBackdrop: false,
                               ),
                             )
                           : _tips.isEmpty

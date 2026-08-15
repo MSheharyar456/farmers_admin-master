@@ -161,7 +161,8 @@ class _SideMenuState extends State<SideMenu> {
                       index: 15,
                       icon: Icons.delete_forever,
                       text: "DELETED USERS",
-                      onTap: () => _navigateTo(context, const DeletedUsersScreen(), 15),
+                      onTap: () =>
+                          _navigateTo(context, const DeletedUsersScreen(), 15),
                     ),
                     _buildMenuItem(
                       context,
@@ -176,11 +177,8 @@ class _SideMenuState extends State<SideMenu> {
                       index: 16,
                       icon: Icons.bug_report_outlined,
                       text: "CRASH REPORTS",
-                      onTap: () => _navigateTo(
-                        context,
-                        const CrashReportsScreen(),
-                        16,
-                      ),
+                      onTap: () =>
+                          _navigateTo(context, const CrashReportsScreen(), 16),
                     ),
                     _buildMenuItem(
                       context,
@@ -211,7 +209,7 @@ class _SideMenuState extends State<SideMenu> {
                       index: 12,
                       svgPath:
                           "images/ic_farm_feedback.svg", // Reusing feedback icon for now
-                      text: "ADMIN CHAT",
+                      text: "USER CHAT",
                       onTap: () =>
                           _navigateTo(context, const AdminChatListScreen(), 12),
                     ),
@@ -311,7 +309,10 @@ class _SideMenuState extends State<SideMenu> {
                     cancelText: "Cancel",
                     showSuccessMessage: false,
                     onConfirm: () async {
-                      final authService = Provider.of<AdminServerAuthService>(context, listen: false);
+                      final authService = Provider.of<AdminServerAuthService>(
+                        context,
+                        listen: false,
+                      );
                       final userEmail = authService.currentUser?.email;
 
                       final prefs = await SharedPreferences.getInstance();

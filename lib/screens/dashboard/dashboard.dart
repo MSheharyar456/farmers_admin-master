@@ -126,12 +126,11 @@ class _DashboardContentState extends State<DashboardContent> {
                       if (vm.isLoading &&
                           vm.stats.totalUsers == 0 &&
                           vm.stats.totalPosts == 0) {
-                        return const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(24.0),
-                            child: CircularProgressIndicator(
-                              color: Colors.green,
-                            ),
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24.0),
+                          child: LoadingOverlay(
+                            text: 'Loading...',
+                            showBackdrop: false,
                           ),
                         );
                       }
@@ -376,14 +375,24 @@ class _RequestsGridState extends State<RequestsGrid> {
   // 🔹 Filter states (applied filters)
   String _searchQuery = '';
   String? _selectedCategory;
+  String? _selectedStatus;
 
   // 🔹 Temporary filter states (not applied until button is clicked)
   String _tempSearchQuery = '';
   String? _tempSelectedCategory;
+  String? _tempSelectedStatus;
 
   // 🔹 Store all pending posts (from server)
   final List<Post> _allPendingPosts = [];
   bool _isInitialLoad = true;
+
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   Stream<List<Post>>? _pendingPostsLiveStream;
 
@@ -471,6 +480,8 @@ class _RequestsGridState extends State<RequestsGrid> {
     'Agricultural Tools': 'agriculturalTools',
     'Delivery': 'delivery',
     'Equipments': 'equipments',
+    'Machine': 'machine',
+    'Solar Panel': 'solar_panel',
     'Land Services': 'landServices',
     'Worker Services': 'workerServices',
     'Irrigation': 'irrigation',
@@ -502,6 +513,8 @@ class _RequestsGridState extends State<RequestsGrid> {
     super.initState();
     _selectedCategory = "All";
     _tempSelectedCategory = "All";
+    _selectedStatus = "All";
+    _tempSelectedStatus = "All";
     _loadPermissions();
     _initColumns();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadPendingPosts());
@@ -582,23 +595,50 @@ class _RequestsGridState extends State<RequestsGrid> {
         minWidth: 115,
         renderer: (rendererContext) {
           final postData = rendererContext.row.cells['postData']?.value;
-          final bool isCancelled = postData is Post && postData.postIsCancelled;
+          final bool isCancelled =
+              postData is Post &&
+              (postData.postIsCancelled || postData.postCancelApproved);
+
+          if (isCancelled) {
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                Container(
+                  width: 5,
+                  height: 5,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 5),
+                const Text(
+                  'Canceled',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w500,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            );
+          }
 
           return Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.start,
             children: [
               Container(
                 width: 5,
                 height: 5,
-                decoration: BoxDecoration(
-                  color: isCancelled ? Colors.red : Colors.orange,
+                decoration: const BoxDecoration(
+                  color: Colors.orange,
                   shape: BoxShape.circle,
                 ),
               ),
               const SizedBox(width: 5),
-              Text(
-                isCancelled ? 'Rejected' : 'Pending',
-                style: const TextStyle(
+              const Text(
+                'Pending',
+                style: TextStyle(
                   color: Colors.black,
                   fontWeight: FontWeight.w500,
                   fontSize: 12,
@@ -630,10 +670,11 @@ class _RequestsGridState extends State<RequestsGrid> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: IconButton(
+                    padding: EdgeInsets.zero,
                     icon: SvgPicture.asset(
                       'images/ic_farm_edit.svg',
-                      width: 15,
-                      height: 15,
+                      width: 14,
+                      height: 14,
                       color: Colors.blue,
                     ),
                     splashColor: Colors.transparent,
@@ -676,10 +717,11 @@ class _RequestsGridState extends State<RequestsGrid> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: IconButton(
+                    padding: EdgeInsets.zero,
                     icon: SvgPicture.asset(
                       'images/ic_farm_trash.svg',
-                      width: 15,
-                      height: 15,
+                      width: 14,
+                      height: 14,
                       color: Colors.red,
                     ),
                     tooltip: 'Delete Post',
@@ -766,6 +808,12 @@ class _RequestsGridState extends State<RequestsGrid> {
       if (postCat != selectedDbValue) return false;
     }
 
+    if (_selectedStatus != null && _selectedStatus != "All") {
+      final bool isCancelled = post.postIsCancelled || post.postCancelApproved;
+      if (_selectedStatus == "Pending" && isCancelled) return false;
+      if (_selectedStatus == "Canceled" && !isCancelled) return false;
+    }
+
     return true;
   }
 
@@ -822,6 +870,7 @@ class _RequestsGridState extends State<RequestsGrid> {
                     vertical: 10,
                   ),
                 ),
+                controller: _searchController,
                 onChanged: (val) {
                   setState(() {
                     _tempSearchQuery = val;
@@ -867,49 +916,120 @@ class _RequestsGridState extends State<RequestsGrid> {
                 ),
               ),
               const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _searchQuery = _tempSearchQuery.toLowerCase();
-                      _selectedCategory = _tempSelectedCategory;
-                      _currentPage = 1;
-                      if (_isGridLoaded) _updatePlutoGridRows();
-                    });
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5),
+              DropdownButtonFormField2<String>(
+                value: _tempSelectedStatus ?? "All",
+                isExpanded: true,
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  focusedBorder: const OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.green, width: 2),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                ),
+                hint: const Text("Select Status"),
+                items: ["All", "Pending", "Canceled"].map((status) {
+                  return DropdownMenuItem(value: status, child: Text(status));
+                }).toList(),
+                onChanged: (val) {
+                  setState(() {
+                    _tempSelectedStatus = val;
+                  });
+                },
+                dropdownStyleData: const DropdownStyleData(
+                  maxHeight: 200,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.all(Radius.circular(8)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _searchQuery = _tempSearchQuery.toLowerCase();
+                          _selectedCategory = _tempSelectedCategory;
+                          _selectedStatus = _tempSelectedStatus;
+                          _currentPage = 1;
+                          if (_isGridLoaded) _updatePlutoGridRows();
+                        });
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SvgPicture.asset(
+                            'images/ic_farm_filter.svg',
+                            height: 12,
+                            width: 12,
+                            colorFilter: const ColorFilter.mode(
+                              Colors.white,
+                              BlendMode.srcIn,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Text(
+                            "APPLY",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SvgPicture.asset(
-                        'images/ic_farm_filter.svg',
-                        height: 12,
-                        width: 12,
-                        color: Colors.white,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _searchController?.clear();
+                          _tempSearchQuery = '';
+                          _searchQuery = '';
+                          _tempSelectedCategory = "All";
+                          _selectedCategory = "All";
+                          _tempSelectedStatus = "All";
+                          _selectedStatus = "All";
+                          _currentPage = 1;
+                          if (_isGridLoaded) _updatePlutoGridRows();
+                        });
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(5),
+                        ),
                       ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        "APPLY FILTERS",
+                      child: const Text(
+                        "REMOVE FILTER",
                         style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
                           fontSize: 10,
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ],
           )
@@ -942,6 +1062,7 @@ class _RequestsGridState extends State<RequestsGrid> {
                         vertical: 0,
                       ),
                     ),
+                    controller: _searchController,
                     onChanged: (val) {
                       setState(() {
                         _tempSearchQuery = val;
@@ -1020,45 +1141,148 @@ class _RequestsGridState extends State<RequestsGrid> {
               const SizedBox(width: 12),
               Expanded(
                 flex: 1,
-                child: ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _searchQuery = _tempSearchQuery.toLowerCase();
-                      _selectedCategory = _tempSelectedCategory;
-                      _currentPage = 1;
-                      if (_isGridLoaded) _updatePlutoGridRows();
-                    });
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 20,
+                child: SizedBox(
+                  height: 38,
+                  child: DropdownButtonFormField2<String>(
+                    value: _tempSelectedStatus ?? "All",
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      enabledBorder: const OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.grey, width: 1),
+                      ),
+                      focusedBorder: const OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.green, width: 1),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5),
+                    iconStyleData: const IconStyleData(
+                      icon: Icon(Icons.arrow_drop_down),
+                      iconSize: 20,
+                      iconEnabledColor: Colors.grey,
+                      iconDisabledColor: Colors.grey,
+                    ),
+                    hint: const Text(
+                      "Select Status",
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    items: ["All", "Pending", "Canceled"].map((status) {
+                      return DropdownMenuItem(
+                        value: status,
+                        child: Text(
+                          status,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      setState(() {
+                        _tempSelectedStatus = val;
+                      });
+                    },
+                    dropdownStyleData: const DropdownStyleData(
+                      maxHeight: 200,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.all(Radius.circular(8)),
+                      ),
+                    ),
+                    buttonStyleData: const ButtonStyleData(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
                     ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SvgPicture.asset(
-                        'images/ic_farm_filter.svg',
-                        height: 12,
-                        width: 12,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        "APPLY FILTERS",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
+                ),
+              ),
+
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 1,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          setState(() {
+                            _searchQuery = _tempSearchQuery.toLowerCase();
+                            _selectedCategory = _tempSelectedCategory;
+                            _selectedStatus = _tempSelectedStatus;
+                            _currentPage = 1;
+                            if (_isGridLoaded) _updatePlutoGridRows();
+                          });
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SvgPicture.asset(
+                              'images/ic_farm_filter.svg',
+                              height: 12,
+                              width: 12,
+                              colorFilter: const ColorFilter.mode(
+                                Colors.white,
+                                BlendMode.srcIn,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Text(
+                              "APPLY",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          setState(() {
+                            _searchController?.clear();
+                            _tempSearchQuery = '';
+                            _searchQuery = '';
+                            _tempSelectedCategory = "All";
+                            _selectedCategory = "All";
+                            _tempSelectedStatus = "All";
+                            _selectedStatus = "All";
+                            _currentPage = 1;
+                            if (_isGridLoaded) _updatePlutoGridRows();
+                          });
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                        ),
+                        child: const Text(
+                          "CLEAR",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1103,18 +1327,18 @@ class _RequestsGridState extends State<RequestsGrid> {
                   const Text(
                     "No pending requests available",
                     style: TextStyle(
-                      fontSize: 22,
+                      fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: Colors.black87,
                     ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    "Pending requests will appear here",
-                    style: TextStyle(fontSize: 14, color: Colors.grey),
-                    textAlign: TextAlign.center,
-                  ),
+                  // const Text(
+                  //   "Pending requests will appear here",
+                  //   style: TextStyle(fontSize: 14, color: Colors.grey),
+                  //   textAlign: TextAlign.center,
+                  // ),
                 ],
               ),
             ),

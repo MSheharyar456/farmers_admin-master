@@ -6,6 +6,7 @@ import 'package:farmers_admin/services/admin_working_status_api_service.dart';
 import 'package:farmers_admin/services/admin_server_auth_service.dart';
 import 'package:farmers_admin/services/admin_crash_reports_api_service.dart';
 import 'package:farmers_admin/services/deleted_users_api_service.dart';
+import 'package:farmers_admin/services/admin_chat_service.dart';
 import 'package:farmers_admin/services/farming_tip_api_service.dart';
 import 'package:farmers_admin/services/slider_api_service.dart';
 import 'package:farmers_admin/viewmodels/dashboard_viewmodel.dart';
@@ -81,6 +82,9 @@ Future<void> main() async {
         ),
         ProxyProvider<AdminServerAuthService, AdminCrashReportsApiService>(
           update: (_, auth, __) => AdminCrashReportsApiService(auth),
+        ),
+        ProxyProvider<AdminServerAuthService, AdminChatService>(
+          update: (_, auth, __) => AdminChatService(auth),
         ),
         ChangeNotifierProxyProvider<UserRepository, UserScreenViewModel>(
           create: (context) => UserScreenViewModel(repository: context.read<UserRepository>()),

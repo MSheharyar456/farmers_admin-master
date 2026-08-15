@@ -53,6 +53,8 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
   // 🔹 Temporary filter states (not applied until button is clicked)
   String _tempSearchQuery = '';
   String? _tempSelectedCategory;
+  String? _selectedPostType;
+  String? _tempSelectedPostType;
 
   int _currentPage = 1;
   int _rowsPerPage = 10;
@@ -60,6 +62,7 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
   // Permission states
   bool _canEdit = true;
   bool _canDelete = true;
+  late TextEditingController _searchController;
 
   // Helper method to format display text
   String _formatDisplayText(String text) {
@@ -83,6 +86,8 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
       'agriculturalTools': 'Agricultural Tools',
       'delivery': 'Delivery',
       'equipments': 'Equipments',
+      'machine': 'Machine',
+      'solar_panel': 'Solar Panel',
       'landServices': 'Land Services',
       'workerServices': 'Worker Services',
       'irrigation': 'Irrigation',
@@ -130,6 +135,8 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
     'Agricultural Tools': 'agriculturalTools',
     'Delivery': 'delivery',
     'Equipments': 'equipments',
+    'Machine': 'machine',
+    'Solar Panel': 'solar_panel',
     'Land Services': 'landServices',
     'Worker Services': 'workerServices',
     'Irrigation': 'irrigation',
@@ -274,10 +281,11 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: IconButton(
+                    padding: EdgeInsets.zero,
                     icon: SvgPicture.asset(
                       'images/ic_farm_edit.svg',
-                      width: 15,
-                      height: 15,
+                      width: 14,
+                      height: 14,
                       color: Colors.blue,
                     ),
                     tooltip: 'Edit Post',
@@ -326,10 +334,11 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: IconButton(
+                    padding: EdgeInsets.zero,
                     icon: SvgPicture.asset(
                       'images/ic_farm_trash.svg',
-                      width: 15,
-                      height: 15,
+                      width: 14,
+                      height: 14,
                       color: Colors.red,
                     ),
                     tooltip: 'Delete Post',
@@ -370,10 +379,19 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
   @override
   void initState() {
     super.initState();
-    _selectedCategory = "All";
-    _tempSelectedCategory = "All";
+    _selectedCategory = "All"; // Initialize category
+    _selectedPostType = "All"; // Initialize post type
+    _tempSelectedCategory = "All"; // Initialize temporary category
+    _tempSelectedPostType = "All"; // Initialize temporary post type
+    _searchController = TextEditingController();
     _loadPermissions();
     _loadPosts();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadPermissions() async {
@@ -448,6 +466,17 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
       if (postCat != selectedDbValue) return false;
     }
 
+    // Post Type filter
+    if (_selectedPostType != null && _selectedPostType != "All") {
+      if (_selectedPostType == "Featured Post" && !post.postIsFeatured)
+        return false;
+      if (_selectedPostType == "Top Post" && !post.postIsTop) return false;
+      if (_selectedPostType == "Home Post" && !post.postIsHomePost)
+        return false;
+      if (_selectedPostType == "Colored Post" && !post.postIsColored)
+        return false;
+    }
+
     return true;
   }
 
@@ -481,12 +510,6 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
 
     stateManager.removeAllRows();
     if (newRows.isNotEmpty) stateManager.appendRows(newRows);
-  }
-
-  @override
-  @override
-  void dispose() {
-    super.dispose();
   }
 
   Widget _buildEmptyState() {
@@ -667,6 +690,7 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
                         ? Column(
                             children: [
                               TextField(
+                                controller: _searchController,
                                 decoration: InputDecoration(
                                   hintText: 'Search...',
                                   prefixIcon: const Icon(Icons.search),
@@ -737,49 +761,171 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
                                 ),
                               ),
                               const SizedBox(height: 12),
+                              // Post Type Dropdown - Mobile
+                              DropdownButtonFormField2<String>(
+                                value: _tempSelectedPostType ?? "All",
+                                isExpanded: true,
+                                decoration: InputDecoration(
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                  focusedBorder: const OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Colors.green,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                ),
+                                hint: const Text(
+                                  "Select Post Type",
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                items:
+                                    [
+                                      'All',
+                                      'Featured Post',
+                                      'Top Post',
+                                      'Home Post',
+                                      'Colored Post',
+                                    ].map((type) {
+                                      return DropdownMenuItem(
+                                        value: type,
+                                        child: Text(type),
+                                      );
+                                    }).toList(),
+                                onChanged: (val) {
+                                  setState(() {
+                                    _tempSelectedPostType = val;
+                                  });
+                                },
+                                dropdownStyleData: const DropdownStyleData(
+                                  maxHeight: 200,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.all(
+                                      Radius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
                               SizedBox(
                                 width: double.infinity,
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _searchQuery = _tempSearchQuery
-                                          .toLowerCase();
-                                      _selectedCategory = _tempSelectedCategory;
-                                      _currentPage = 1;
-                                      if (_isGridLoaded) _updatePlutoGridRows();
-                                    });
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 12,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(5),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SvgPicture.asset(
-                                        'images/ic_farm_filter.svg',
-                                        height: 12,
-                                        width: 12,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        "APPLY FILTERS",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _searchQuery = _tempSearchQuery
+                                                .toLowerCase();
+                                            _selectedCategory =
+                                                _tempSelectedCategory;
+                                            _selectedPostType =
+                                                _tempSelectedPostType ?? "All";
+                                            _currentPage = 1;
+                                            if (_isGridLoaded)
+                                              _updatePlutoGridRows();
+                                          });
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.green,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 12,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              5,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            SvgPicture.asset(
+                                              'images/ic_farm_filter.svg',
+                                              height: 12,
+                                              width: 12,
+                                              color: Colors.white,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                SvgPicture.asset(
+                                                  'images/ic_farm_filter.svg',
+                                                  height: 12,
+                                                  width: 12,
+                                                  colorFilter:
+                                                      const ColorFilter.mode(
+                                                        Colors.white,
+                                                        BlendMode.srcIn,
+                                                      ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                const Text(
+                                                  "APPLY",
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 10,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _searchController.clear();
+                                            _tempSearchQuery = "";
+                                            _searchQuery = "";
+                                            _tempSelectedCategory = "All";
+                                            _selectedCategory = "All";
+                                            _tempSelectedPostType = "All";
+                                            _selectedPostType = "All";
+                                            _currentPage = 1;
+                                            if (_isGridLoaded)
+                                              _updatePlutoGridRows();
+                                          });
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 12,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              5,
+                                            ),
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          "CLEAR",
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -795,6 +941,7 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
                                     style: const TextStyle(
                                       fontSize: 12,
                                     ), // 👈 This controls the input text size
+                                    controller: _searchController,
                                     decoration: InputDecoration(
                                       filled: true,
                                       fillColor: Colors.white,
@@ -896,48 +1043,189 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
                                 ),
                               ),
                               const SizedBox(width: 12),
+                              // Post Type Dropdown - Desktop
                               Expanded(
                                 flex: 1,
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _searchQuery = _tempSearchQuery
-                                          .toLowerCase();
-                                      _selectedCategory = _tempSelectedCategory;
-                                      _currentPage = 1;
-                                      if (_isGridLoaded) _updatePlutoGridRows();
-                                    });
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 20,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(5),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SvgPicture.asset(
-                                        'images/ic_farm_filter.svg',
-                                        height: 12,
-                                        width: 12,
-                                        color: Colors.white,
+                                child: SizedBox(
+                                  height: 38,
+                                  child: DropdownButtonFormField2<String>(
+                                    value: _tempSelectedPostType ?? "All",
+                                    isExpanded: true,
+                                    decoration: InputDecoration(
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(4),
                                       ),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        "APPLY FILTERS",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10,
+                                      focusedBorder: const OutlineInputBorder(
+                                        borderSide: BorderSide(
+                                          color: Colors.green,
+                                          width: 1,
                                         ),
                                       ),
-                                    ],
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 15,
+                                            vertical: 10,
+                                          ),
+                                    ),
+                                    iconStyleData: const IconStyleData(
+                                      icon: Icon(Icons.arrow_drop_down),
+                                      iconSize: 20,
+                                      iconEnabledColor: Colors.grey,
+                                      iconDisabledColor: Colors.grey,
+                                    ),
+                                    hint: const Text(
+                                      "Post Type",
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                    items:
+                                        [
+                                          'All',
+                                          'Featured Post',
+                                          'Top Post',
+                                          'Home Post',
+                                          'Colored Post',
+                                        ].map((type) {
+                                          return DropdownMenuItem(
+                                            value: type,
+                                            child: Text(
+                                              type,
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          );
+                                        }).toList(),
+                                    onChanged: (val) {
+                                      setState(() {
+                                        _tempSelectedPostType = val;
+                                      });
+                                    },
+                                    dropdownStyleData: const DropdownStyleData(
+                                      maxHeight: 200,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.all(
+                                          Radius.circular(8),
+                                        ),
+                                      ),
+                                    ),
                                   ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                flex: 1,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _searchQuery = _tempSearchQuery
+                                                .toLowerCase();
+                                            _selectedCategory =
+                                                _tempSelectedCategory;
+                                            _selectedPostType =
+                                                _tempSelectedPostType ?? "All";
+                                            _currentPage = 1;
+                                            if (_isGridLoaded)
+                                              _updatePlutoGridRows();
+                                          });
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.green,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 20,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              5,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            SvgPicture.asset(
+                                              'images/ic_farm_filter.svg',
+                                              height: 12,
+                                              width: 12,
+                                              color: Colors.white,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                SvgPicture.asset(
+                                                  'images/ic_farm_filter.svg',
+                                                  height: 12,
+                                                  width: 12,
+                                                  colorFilter:
+                                                      const ColorFilter.mode(
+                                                        Colors.white,
+                                                        BlendMode.srcIn,
+                                                      ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                const Text(
+                                                  "APPLY",
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 10,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _searchController.clear();
+                                            _tempSearchQuery = "";
+                                            _searchQuery = "";
+                                            _tempSelectedCategory = "All";
+                                            _selectedCategory = "All";
+                                            _tempSelectedPostType = "All";
+                                            _selectedPostType = "All";
+                                            _currentPage = 1;
+                                            if (_isGridLoaded)
+                                              _updatePlutoGridRows();
+                                          });
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 20,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              5,
+                                            ),
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          "CLEAR",
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -946,7 +1234,11 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
 
                     // Grid Section
                     Container(
-                      height: 300,
+                      height: _isLoading
+                          ? 300
+                          : (_posts.isEmpty || _filteredPosts.isEmpty)
+                          ? 400
+                          : (_paginatedPosts.length * rowHeight) + headerHeight,
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(8),
@@ -969,8 +1261,15 @@ class _SoldPostsContentState extends State<SoldPostsContent> {
                                 onLoaded: (event) {
                                   stateManager = event.stateManager;
                                   stateManager.setShowColumnFilter(false);
-                                  setState(() => _isGridLoaded = true);
-                                  if (_posts.isNotEmpty) _updatePlutoGridRows();
+                                  WidgetsBinding.instance.addPostFrameCallback((
+                                    _,
+                                  ) {
+                                    if (mounted) {
+                                      setState(() => _isGridLoaded = true);
+                                      if (_posts.isNotEmpty)
+                                        _updatePlutoGridRows();
+                                    }
+                                  });
                                 },
                                 configuration: PlutoGridConfiguration(
                                   columnSize: const PlutoGridColumnSizeConfig(

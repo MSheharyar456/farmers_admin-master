@@ -7,8 +7,10 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:farmers_admin/common/app_header.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/models/deleted_user_model.dart';
+import 'package:farmers_admin/models/post_model.dart';
 import 'package:farmers_admin/models/user_model.dart';
 import 'package:farmers_admin/repositories/user_repository.dart';
+import 'package:farmers_admin/screens/post_management/edit_post_screen.dart';
 import 'package:farmers_admin/services/deleted_users_api_service.dart';
 import 'package:farmers_admin/services/admin_server_auth_service.dart';
 import 'package:farmers_admin/widgets/loading_overlay.dart';
@@ -31,6 +33,7 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
   bool _isLoading = false;
   bool _isTransferring = false;
   bool _isTransferDialogOpen = false;
+  bool _isNavigatingToEdit = false;
   String? _error;
   int _currentPage = 1;
   int _rowsPerPage = 10;
@@ -63,12 +66,15 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
     'Agricultural Tools': 'agriculturalTools',
     'Delivery': 'delivery',
     'Equipments': 'equipments',
+    'Machine': 'machine',
+    'Solar Panel': 'solar_panel',
     'Land Services': 'landServices',
     'Worker Services': 'workerServices',
     'Irrigation': 'irrigation',
     'Live Stock': 'live_stock',
     'Others': 'others',
   };
+  late TextEditingController _searchController;
 
   @override
   void initState() {
@@ -80,8 +86,15 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
       );
       _apiService = DeletedUsersApiService(_authService);
       _userRepository = UserRepository(_authService);
+      _searchController = TextEditingController();
       _loadDetails();
     });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadDetails() async {
@@ -100,6 +113,82 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
         _error = 'Failed to load user details: $e';
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _navigateToEditPost(DeletedUserPost post) async {
+    if (_isNavigatingToEdit) return;
+    setState(() => _isNavigatingToEdit = true);
+
+    try {
+      final postModel = Post(
+        postId: post.id,
+        postTitle: post.title,
+        postGender: '',
+        postCity: post.city ?? '',
+        postVillage: post.village ?? '',
+        postLocation: '',
+        postCategory: post.category ?? '',
+        postUserVerified: false,
+        postAge: 0,
+        postPrice: 0,
+        postAverageWeight: 0,
+        postWeightCategory: null,
+        postQuantity: 0,
+        postWeight: 0,
+        postDate: DateTime.now().millisecondsSinceEpoch,
+        postIsApproved: (post.status ?? '').toLowerCase() == 'approved',
+        postImages: post.images,
+        postIsFeatured: false,
+        postIsHomePost: false,
+        postIsLiked: false,
+        postIsColored: false,
+        postIsSold: false,
+        postIsSoldStatus: 0,
+        postIsTop: false,
+        postIsUpdate: false,
+        postCancelApproved: false,
+        postIsCancelled: false,
+        postAdditionalDetails: post.description,
+        postArea: 0,
+        postLiquidQuantity: 0,
+        postLiveStockCategory: null,
+        postServiceType: null,
+        postBarCode: post.barcode ?? '',
+        postUserContact: _details!.user.phoneComplete ?? '',
+        postUserId: _details!.user.uid,
+        postUserImage: _details!.user.profileImage ?? '',
+        postUserLocation: '',
+        postUserLoginDate: DateTime.now().millisecondsSinceEpoch,
+        postUserMail: _details!.user.userEmail,
+        postUserName: _details!.user.userName,
+        postViews: 0,
+        postUserImageColor: '#cccccc',
+        postCurrencyCategory: null,
+      );
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => EditPostScreen(
+            post: postModel,
+            sourceScreen: 'deleted_user_detail',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Unable to open edit screen: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isNavigatingToEdit = false);
+      }
     }
   }
 
@@ -122,9 +211,8 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
         context: context,
         barrierDismissible: false,
         barrierColor: Colors.black45,
-        builder: (_) => const LoadingOverlay(
-          text: 'Loading target accounts...',
-        ),
+        builder: (_) =>
+            const LoadingOverlay(text: 'Loading target accounts...'),
       );
       isTargetsLoadingOverlayVisible = true;
       final users = await _userRepository.getUsers(limit: 500);
@@ -278,9 +366,14 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
 
                               if (!mounted) return;
 
-                              if (Navigator.of(context, rootNavigator: true)
-                                  .canPop()) {
-                                Navigator.of(context, rootNavigator: true).pop();
+                              if (Navigator.of(
+                                context,
+                                rootNavigator: true,
+                              ).canPop()) {
+                                Navigator.of(
+                                  context,
+                                  rootNavigator: true,
+                                ).pop();
                               }
                               isTransferLoadingOverlayVisible = false;
                               Navigator.pop(dialogContext);
@@ -296,9 +389,14 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
                             } catch (e) {
                               if (isTransferLoadingOverlayVisible &&
                                   mounted &&
-                                  Navigator.of(context, rootNavigator: true)
-                                      .canPop()) {
-                                Navigator.of(context, rootNavigator: true).pop();
+                                  Navigator.of(
+                                    context,
+                                    rootNavigator: true,
+                                  ).canPop()) {
+                                Navigator.of(
+                                  context,
+                                  rootNavigator: true,
+                                ).pop();
                                 isTransferLoadingOverlayVisible = false;
                               }
                               if (mounted) {
@@ -311,9 +409,14 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
                             } finally {
                               if (isTransferLoadingOverlayVisible &&
                                   mounted &&
-                                  Navigator.of(context, rootNavigator: true)
-                                      .canPop()) {
-                                Navigator.of(context, rootNavigator: true).pop();
+                                  Navigator.of(
+                                    context,
+                                    rootNavigator: true,
+                                  ).canPop()) {
+                                Navigator.of(
+                                  context,
+                                  rootNavigator: true,
+                                ).pop();
                                 isTransferLoadingOverlayVisible = false;
                               }
                               if (mounted) {
@@ -382,6 +485,8 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
       'agriculturalTools': 'Agricultural Tools',
       'delivery': 'Delivery',
       'equipments': 'Equipments',
+      'machine': 'Machine',
+      'solar_panel': 'Solar Panel',
       'landServices': 'Land Services',
       'workerServices': 'Worker Services',
       'irrigation': 'Irrigation',
@@ -580,6 +685,32 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
           );
         },
       ),
+      PlutoColumn(
+        title: 'Actions',
+        field: 'actions',
+        type: PlutoColumnType.text(),
+        enableEditingMode: false,
+        width: 120,
+        minWidth: 100,
+        renderer: (ctx) {
+          final postId = ctx.row.cells['postId']?.value?.toString() ?? '';
+          final post = _posts.firstWhere(
+            (p) => p.id == postId,
+            orElse: () => _posts.first,
+          );
+          return Align(
+            alignment: Alignment.center,
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.edit, size: 18, color: Colors.green),
+              tooltip: 'Edit Post',
+              onPressed: _isNavigatingToEdit
+                  ? null
+                  : () => _navigateToEditPost(post),
+            ),
+          );
+        },
+      ),
     ];
   }
 
@@ -597,12 +728,14 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
         PlutoRow(
           cells: {
             'numbering': PlutoCell(value: counter.toString()),
+            'postId': PlutoCell(value: post.id),
             'barcode': PlutoCell(value: post.barcode ?? ''),
             'post_title': PlutoCell(value: post.title),
             'category': PlutoCell(value: post.category ?? ''),
             'city': PlutoCell(value: post.city ?? ''),
             'village': PlutoCell(value: post.village ?? ''),
             'approvalStatus': PlutoCell(value: approvalStatus),
+            'actions': PlutoCell(value: ''),
           },
         ),
       );
@@ -969,6 +1102,7 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
         ? Column(
             children: [
               TextField(
+                controller: _searchController,
                 decoration: InputDecoration(
                   hintText: 'Search by title, barcode or location...',
                   prefixIcon: const Icon(Icons.search),
@@ -1064,50 +1198,74 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _applyFilters,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 20,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _applyFilters,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    SvgPicture.asset(
+      'images/ic_farm_filter.svg',
+      height: 12,
+      width: 12,
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    ),
+    const SizedBox(width: 4),
+    const Text(
+      "APPLY",
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
+    ),
+  ],
+),
                     ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SvgPicture.asset(
-                        'images/ic_farm_filter.svg',
-                        height: 20,
-                        width: 20,
-                        color: Colors.white,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _searchController.clear();
+                          _tempSearchQuery = '';
+                          _searchQuery = '';
+                          _tempSelectedApproval = null;
+                          _selectedApproval = null;
+                          _tempSelectedCategory = null;
+                          _selectedCategory = null;
+                          _currentPage = 1;
+                          _applyFilters();
+                        });
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        "APPLY FILTERS",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+                      child: const Text("REMOVE FILTER", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
+                    ),
                   ),
-                ),
+                ],
               ),
             ],
           )
         : Row(
             children: [
               Expanded(
-                flex: 3,
-                child: SizedBox(
-                  height: 38,
-                  child: TextField(
+                              flex: 2,
+                              child: SizedBox(
+                                height: 38,
+                                child: TextField(
+                    controller: _searchController,
                     style: const TextStyle(fontSize: 12),
                     decoration: InputDecoration(
                       filled: true,
@@ -1244,38 +1402,63 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
               const SizedBox(width: 12),
               Expanded(
                 flex: 1,
-                child: ElevatedButton(
-                  onPressed: _applyFilters,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 20,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SvgPicture.asset(
-                        'images/ic_farm_filter.svg',
-                        height: 12,
-                        width: 12,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        "APPLY FILTERS",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _applyFilters,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
                         ),
+                        child: Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    SvgPicture.asset(
+      'images/ic_farm_filter.svg',
+      height: 12,
+      width: 12,
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    ),
+    const SizedBox(width: 4),
+    const Text(
+      "APPLY",
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
+    ),
+  ],
+),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          setState(() {
+                            _searchController.clear();
+                            _tempSearchQuery = '';
+                            _searchQuery = '';
+                            _tempSelectedApproval = null;
+                            _selectedApproval = null;
+                            _tempSelectedCategory = null;
+                            _selectedCategory = null;
+                            _currentPage = 1;
+                            _applyFilters();
+                          });
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                        ),
+                        child: const Text("CLEAR", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1316,18 +1499,16 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 400),
-                  child: Image.asset(
-                    'images/image_farm_nothing_remains.png',
-                    height: 150,
-                  ),
+                Image.asset(
+                  'images/image_farm_nothing_remains.png',
+                  height: 150,
                 ),
+
                 const SizedBox(height: 24),
                 const Text(
                   "No posts available",
                   style: TextStyle(
-                    fontSize: 22,
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: Colors.black87,
                   ),
@@ -2082,12 +2263,12 @@ class _DeletedUserDetailScreenState extends State<DeletedUserDetailScreen> {
                                     const SizedBox(width: 12),
                                   if (_posts.isNotEmpty)
                                     OutlinedButton.icon(
-                                onPressed:
-                                    _isLoading ||
-                                            _isTransferring ||
-                                            _isTransferDialogOpen
-                                    ? null
-                                    : _showTransferPostsDialog,
+                                      onPressed:
+                                          _isLoading ||
+                                              _isTransferring ||
+                                              _isTransferDialogOpen
+                                          ? null
+                                          : _showTransferPostsDialog,
                                       icon: _isTransferring
                                           ? const SizedBox(
                                               width: 14,

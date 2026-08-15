@@ -283,33 +283,58 @@ class _AdminActivityContentState extends State<AdminActivityContent> {
                         const SizedBox(height: 12),
 
                         // Apply filters button
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: null, // placeholder
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: null, // placeholder
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                child: Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    SvgPicture.asset(
+      'images/ic_farm_filter.svg',
+      height: 12,
+      width: 12,
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    ),
+    const SizedBox(width: 4),
+    const Text(
+      "APPLY",
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
+    ),
+  ],
+),
+                              ),
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                SvgPicture.asset(
-                                    'images/ic_farm_filter.svg',
-                                    height: 20,
-                                    width: 20,
-                                    color: Colors.white),
-                                const SizedBox(width: 8),
-                                const Text("APPLY FILTERS",
-                                    style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold)),
-                              ],
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _searchQuery = '';
+                                    _selectedAdmin = "All";
+                                    _selectedActionType = "All";
+                                    _selectedDateFilter = "All Time";
+                                  });
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                child: const Text("REMOVE FILTER", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
                       ],
                     )
@@ -318,10 +343,10 @@ class _AdminActivityContentState extends State<AdminActivityContent> {
                       children: [
                         // Search bar
                         Expanded(
-                          flex: 2,
-                          child: SizedBox(
-                            height: 35,
-                            child: TextField(
+                            flex: 3,
+                            child: SizedBox(
+                              height: 35,
+                              child: TextField(
                               style: const TextStyle(fontSize: 12),
                               decoration: InputDecoration(
                                 hintText: 'Search activities...',
@@ -482,40 +507,64 @@ class _AdminActivityContentState extends State<AdminActivityContent> {
                         // Apply Filters Button
                         Expanded(
                           flex: 1,
-                          child: SizedBox(
-                            height: 38,
-                            child: ElevatedButton(
-                              onPressed: null, // placeholder
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 0),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(5)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    child: SvgPicture.asset(
-                                        'images/ic_farm_filter.svg',
-                                        height: 12,
-                                        width: 12,
-                                        color: Colors.white),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: SizedBox(
+                                  height: 38,
+                                  child: ElevatedButton(
+                                    onPressed: null, // placeholder
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                                    ),
+                                    child: Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    SvgPicture.asset(
+      'images/ic_farm_filter.svg',
+      height: 12,
+      width: 12,
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    ),
+    const SizedBox(width: 4),
+    const Text(
+      "APPLY",
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
+    ),
+  ],
+),
                                   ),
-                                  const SizedBox(width: 5),
-                                  Expanded(
-                                    child: const Text("APPLY FILTERS",
-                                        style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold)),
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: SizedBox(
+                                  height: 38,
+                                  child: ElevatedButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _searchQuery = '';
+                                        _selectedAdmin = "All";
+                                        _selectedActionType = "All";
+                                        _selectedDateFilter = "All Time";
+                                      });
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.red,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                                    ),
+                                    child: const Text("CLEAR", style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],

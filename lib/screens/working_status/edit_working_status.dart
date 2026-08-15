@@ -1,6 +1,7 @@
+import 'package:farmers_admin/services/admin_working_status_api_service.dart';
+import 'package:provider/provider.dart';
 import 'package:farmers_admin/models/working_status.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_database/firebase_database.dart';
 import '../../common/app_header.dart';
 import '../../common/side_menu.dart';
 
@@ -15,7 +16,6 @@ class EditWorkingStatusScreen extends StatefulWidget {
 
 class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
   final _formKey = GlobalKey<FormState>();
-  late DatabaseReference _dbRef;
 
   // Controllers
   late TextEditingController _titleController;
@@ -29,10 +29,7 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
   @override
   void initState() {
     super.initState();
-
     final status = widget.status;
-    final statusId = status.statusId;
-    _dbRef = FirebaseDatabase.instance.ref().child('workingStatus/$statusId');
 
     _titleController = TextEditingController(text: status.workingTitle ?? '');
     _detailsController = TextEditingController(
@@ -53,25 +50,21 @@ class _EditWorkingStatusScreenState extends State<EditWorkingStatusScreen> {
     });
 
     try {
+      final api = context.read<AdminWorkingStatusApiService>();
       final updatedData = {
-        "workingTitle": _titleController.text.trim(),
-        "workingDetails": _detailsController.text.trim(),
+        "messageEn": _titleController.text.trim(),
+        "messageAr": _detailsController.text.trim(),
         "isEnableButton": _isEnableButton,
         "isSomethingWrong": _isSomethingWrong,
-        "appVersionCode": int.tryParse(_appVersionController.text.trim()),
-        "updatedAt": DateTime.now().millisecondsSinceEpoch,
+        "appVersionCode": int.tryParse(_appVersionController.text.trim()) ?? 0,
       };
 
-      await _dbRef
-          .update(updatedData)
-          .timeout(
-            const Duration(seconds: 30),
-            onTimeout: () {
-              throw Exception(
-                'Connection timeout. Please check your internet connection.',
-              );
-            },
-          );
+      final statusId = widget.status.statusId;
+      if (statusId == null || statusId.isEmpty) {
+        throw Exception('Missing working status id');
+      }
+
+      await api.updateWorkingStatus(statusId, updatedData);
 
       if (!mounted) return;
 

@@ -59,9 +59,11 @@ class DeletedUsersApiService {
 
   Future<List<DeletedUserModel>> getDeletedUsers({int limit = 100}) async {
     debugPrint('[DELETED_USERS_API] Fetching deleted users...');
-    
+
     final token = await _getToken();
-    debugPrint('[DELETED_USERS_API] Auth token: ${token != null ? 'present' : 'NULL'}');
+    debugPrint(
+      '[DELETED_USERS_API] Auth token: ${token != null ? 'present' : 'NULL'}',
+    );
 
     if (token == null || token.isEmpty) {
       throw Exception('Not authenticated. Please log in again.');
@@ -82,7 +84,9 @@ class DeletedUsersApiService {
       debugPrint('[DELETED_USERS_API] Response: $data');
       if (data == null || data['success'] != true) return [];
       final users = data['users'] as List<dynamic>? ?? [];
-      return users.map((u) => DeletedUserModel.fromMap(u as Map<String, dynamic>)).toList();
+      return users
+          .map((u) => DeletedUserModel.fromMap(u as Map<String, dynamic>))
+          .toList();
     } on DioException catch (e) {
       debugPrint('[DELETED_USERS_API] DioError: ${e.message}');
       debugPrint('[DELETED_USERS_API] DioError type: ${e.type}');
@@ -96,14 +100,18 @@ class DeletedUsersApiService {
 
   Future<DeletedUserFullDetails?> getFullDetails(String userId) async {
     debugPrint('[DELETED_USERS_API] Fetching full details for user: $userId');
-    debugPrint('[DELETED_USERS_API] API URL: ${apiBaseUrl}/admin/deleted-users/$userId/full-details');
-    
+    debugPrint(
+      '[DELETED_USERS_API] API URL: ${apiBaseUrl}/admin/deleted-users/$userId/full-details',
+    );
+
     final token = await _getToken();
     if (token == null || token.isEmpty) {
       debugPrint('[DELETED_USERS_API] ERROR: No auth token');
       throw Exception('Not authenticated. Please log in again.');
     }
-    debugPrint('[DELETED_USERS_API] Token present: ${token.substring(0, 20)}...');
+    debugPrint(
+      '[DELETED_USERS_API] Token present: ${token.substring(0, 20)}...',
+    );
 
     try {
       final res = await _dio.get<Map<String, dynamic>>(
@@ -116,14 +124,18 @@ class DeletedUsersApiService {
         ),
       );
       final data = res.data;
-      debugPrint('[DELETED_USERS_API] Success! Response keys: ${data?.keys.toList()}');
+      debugPrint(
+        '[DELETED_USERS_API] Success! Response keys: ${data?.keys.toList()}',
+      );
       if (data == null || data['success'] != true) {
         debugPrint('[DELETED_USERS_API] Response success=false or null data');
         return null;
       }
       return DeletedUserFullDetails.fromMap(data);
     } on DioException catch (e) {
-      debugPrint('[DELETED_USERS_API] DioError in getFullDetails: ${e.message}');
+      debugPrint(
+        '[DELETED_USERS_API] DioError in getFullDetails: ${e.message}',
+      );
       debugPrint('[DELETED_USERS_API] Status code: ${e.response?.statusCode}');
       debugPrint('[DELETED_USERS_API] Response data: ${e.response?.data}');
       debugPrint('[DELETED_USERS_API] Error type: ${e.type}');
@@ -173,7 +185,7 @@ class DeletedUsersApiService {
     try {
       final token = await _getToken();
       if (token == null || token.isEmpty) return 0;
-      
+
       final res = await _dio.get<Map<String, dynamic>>(
         '/admin/deleted-users',
         queryParameters: {'limit': 500},
@@ -191,6 +203,44 @@ class DeletedUsersApiService {
     } catch (e) {
       debugPrint('[DELETED_USERS_API] Error getting count: $e');
       return 0;
+    }
+  }
+
+  Future<Map<String, dynamic>> purgeDeletedUser(String userId) async {
+    debugPrint('[DELETED_USERS_API] Purging deleted user: $userId');
+
+    final token = await _getToken();
+    if (token == null || token.isEmpty) {
+      throw Exception('Not authenticated. Please log in again.');
+    }
+
+    try {
+      final res = await _dio.delete<Map<String, dynamic>>(
+        '/admin/deleted-users/$userId',
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+            'X-Authorization': 'Bearer $token',
+          },
+        ),
+      );
+
+      final data = res.data;
+      debugPrint('[DELETED_USERS_API] Purge response: $data');
+      if (data == null || data['success'] != true) {
+        throw Exception(data?['message'] ?? 'Failed to purge user');
+      }
+      return data;
+    } on DioException catch (e) {
+      debugPrint(
+        '[DELETED_USERS_API] DioError in purgeDeletedUser: ${e.message}',
+      );
+      debugPrint('[DELETED_USERS_API] Status code: ${e.response?.statusCode}');
+      debugPrint('[DELETED_USERS_API] Response data: ${e.response?.data}');
+      if (e.response?.statusCode == 401) {
+        throw Exception('Authentication failed. Please log in again.');
+      }
+      throw Exception('Network error: ${e.message}');
     }
   }
 }

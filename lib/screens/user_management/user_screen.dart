@@ -8,6 +8,7 @@ import 'package:farmers_admin/viewmodels/user_viewmodel.dart';
 import 'package:farmers_admin/widgets/delete_dialog.dart';
 import 'package:farmers_admin/widgets/responsive_scafold.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:provider/provider.dart';
@@ -149,10 +150,11 @@ class _UserContentState extends State<UserContent> {
                   Expanded(
                     child: Text(
                       "Customer's List",
-                      style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w900,
-                      ),
+                      style: Theme.of(context).textTheme.headlineLarge
+                          ?.copyWith(
+                            color: Colors.black,
+                            fontWeight: FontWeight.w900,
+                          ),
                     ),
                   ),
                   if (_isSelectionMode) _buildBulkActions(context, isMobile),
@@ -203,11 +205,11 @@ class _UserContentState extends State<UserContent> {
                   ],
                 ),
               ),
-              const SizedBox(width: 20),
-              if (_isSelectionMode) 
-                _buildBulkActions(context, isMobile)
-              else 
-                _buildActionButtons(context, isMobile),
+              // const SizedBox(width: 20),
+              // if (_isSelectionMode)
+              //   _buildBulkActions(context, isMobile)
+              // else
+              //   _buildActionButtons(context, isMobile),
             ],
           );
   }
@@ -271,7 +273,10 @@ class _UserContentState extends State<UserContent> {
           ElevatedButton.icon(
             onPressed: () => _showBulkDeleteDialog(context),
             icon: const Icon(Icons.delete, size: 16),
-            label: const Text('Delete Selected', style: TextStyle(fontSize: 12)),
+            label: const Text(
+              'Delete Selected',
+              style: TextStyle(fontSize: 12),
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
@@ -307,7 +312,7 @@ class _UserContentState extends State<UserContent> {
               TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  hintText: 'Search by name or email...',
+                  hintText: 'Search by name, email, or contact...',
                   prefixIcon: const Icon(Icons.search),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -326,79 +331,100 @@ class _UserContentState extends State<UserContent> {
                 },
               ),
               const SizedBox(height: 12),
+              DropdownButtonFormField<String?>(
+                value: viewModel.pendingStatus,
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                ),
+                hint: const Text("Status"),
+                dropdownColor: Colors.white,
+                menuMaxHeight: 200, // Limit menu height
+                isExpanded: true, // Ensure dropdown takes full width
+                items: const [
+                  DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text("All"),
+                  ),
+                  DropdownMenuItem<String?>(
+                    value: "Verified",
+                    child: Text("Verified"),
+                  ),
+                  DropdownMenuItem<String?>(
+                    value: "Unverified",
+                    child: Text("Unverified"),
+                  ),
+                  DropdownMenuItem<String?>(
+                    value: "Disabled",
+                    child: Text("Disabled"),
+                  ),
+                ],
+                onChanged: (val) {
+                  // Store pending status without applying filters
+                  viewModel.setSelectedStatus(val);
+                },
+              ),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
-                    child: DropdownButtonFormField<String?>(
-                      initialValue: viewModel.pendingStatus,
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        viewModel.applyFilters();
+                        if (_isGridLoaded) _updatePlutoGridRows();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
                       ),
-                      hint: const Text("Status"),
-                      dropdownColor: Colors.white,
-                      menuMaxHeight: 150, // Limit menu height
-                      isExpanded: true, // Ensure dropdown takes full width
-                      items: const [
-                        DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text("All"),
-                        ),
-                        DropdownMenuItem<String?>(
-                          value: "Verified",
-                          child: Text("Verified"),
-                        ),
-                        DropdownMenuItem<String?>(
-                          value: "Unverified",
-                          child: Text("Unverified"),
-                        ),
-                      ],
-                      onChanged: (val) {
-                        // Store pending status without applying filters
-                        viewModel.setSelectedStatus(val);
-                      },
+                      child: Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    SvgPicture.asset(
+      'images/ic_farm_filter.svg',
+      height: 12,
+      width: 12,
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    ),
+    const SizedBox(width: 4),
+    const Text(
+      "APPLY",
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
+    ),
+  ],
+),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  ElevatedButton(
-                    onPressed: () {
-                      // Apply filters when button is clicked
-                      viewModel.applyFilters();
-                      if (_isGridLoaded) _updatePlutoGridRows();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 20,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SvgPicture.asset(
-                          'images/ic_farm_filter.svg',
-                          height: 20,
-                          width: 20,
-                          color: Colors.white,
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        _searchController.clear();
+                        viewModel.setSearchQuery('');
+                        viewModel.setSelectedStatus(null);
+                        viewModel.applyFilters();
+                        if (_isGridLoaded) _updatePlutoGridRows();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          "APPLY FILTERS",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
+                      ),
+                      child: const Text("REMOVE FILTER", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                     ),
                   ),
                 ],
@@ -419,7 +445,7 @@ class _UserContentState extends State<UserContent> {
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: Colors.white,
-                      hintText: 'Search by name or email...',
+                      hintText: 'Search by name, email, or contact...',
                       hintStyle: TextStyle(fontSize: 12),
                       prefixIcon: const Icon(Icons.search, size: 14),
                       border: OutlineInputBorder(
@@ -446,7 +472,7 @@ class _UserContentState extends State<UserContent> {
                 child: SizedBox(
                   height: 38,
                   child: DropdownButtonFormField<String?>(
-                    initialValue: viewModel.pendingStatus,
+                    value: viewModel.pendingStatus,
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: Colors.white,
@@ -468,7 +494,7 @@ class _UserContentState extends State<UserContent> {
                     ), // 👈 ADD THIS
                     hint: const Text("Status", style: TextStyle(fontSize: 12)),
                     dropdownColor: Colors.white,
-                    menuMaxHeight: 150, // Limit menu height
+                    menuMaxHeight: 200, // Limit menu height
                     isExpanded: true, // Ensure dropdown takes full width
                     items: const [
                       DropdownMenuItem<String?>(
@@ -486,6 +512,13 @@ class _UserContentState extends State<UserContent> {
                           style: TextStyle(fontSize: 12),
                         ),
                       ),
+                      DropdownMenuItem<String?>(
+                        value: "Disabled",
+                        child: Text(
+                          "Disabled",
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
                     ],
                     onChanged: (val) {
                       // Store pending status without applying filters
@@ -498,43 +531,64 @@ class _UserContentState extends State<UserContent> {
               const SizedBox(width: 12),
               Expanded(
                 flex: 1,
-                child: ElevatedButton(
-                  onPressed: () {
-                    // Apply filters when button is clicked
-                    viewModel.applyFilters();
-                    if (_isGridLoaded) _updatePlutoGridRows();
-                  },
-
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 20,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SvgPicture.asset(
-                        'images/ic_farm_filter.svg',
-                        height: 12,
-                        width: 12,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        "APPLY FILTERS",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          viewModel.applyFilters();
+                          if (_isGridLoaded) _updatePlutoGridRows();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 20),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5),
+                          ),
                         ),
+                        child: Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    SvgPicture.asset(
+      'images/ic_farm_filter.svg',
+      height: 12,
+      width: 12,
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    ),
+    const SizedBox(width: 4),
+    const Text(
+      "APPLY",
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
+    ),
+  ],
+),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          _searchController.clear();
+                          viewModel.setSearchQuery('');
+                          viewModel.setSelectedStatus(null);
+                          viewModel.applyFilters();
+                          if (_isGridLoaded) _updatePlutoGridRows();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 20),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                        ),
+                        child: const Text("CLEAR", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -548,17 +602,15 @@ class _UserContentState extends State<UserContent> {
   ) {
     // Show loading only on initial load
     if (viewModel.isLoading) {
-      return  Container(
+      return Container(
         height: 400,
-         decoration: BoxDecoration(
+        decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Center(child:
-                       const  LoadingOverlay(
-                      text: 'Loading...',
-                      showBackdrop: false,
-                      )),
+        child: Center(
+          child: const LoadingOverlay(text: 'Loading...', showBackdrop: false),
+        ),
       );
     }
 
@@ -643,6 +695,37 @@ class _UserContentState extends State<UserContent> {
         type: PlutoColumnType.text(),
         width: isMobile ? 110 : 130,
         enableEditingMode: false,
+        renderer: (rendererContext) {
+          final value = rendererContext.cell.value?.toString() ?? '';
+          return GestureDetector(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: value));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Copied: $value'),
+                  duration: const Duration(seconds: 1),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Row(
+                children: [
+                  const Icon(Icons.copy, size: 11, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      value,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
       if (!isMobile)
         PlutoColumn(
@@ -650,6 +733,37 @@ class _UserContentState extends State<UserContent> {
           field: 'email',
           type: PlutoColumnType.text(),
           enableEditingMode: false,
+          renderer: (rendererContext) {
+            final value = rendererContext.cell.value?.toString() ?? '';
+            return GestureDetector(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: value));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Copied: $value'),
+                    duration: const Duration(seconds: 1),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              },
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: Row(
+                  children: [
+                    const Icon(Icons.copy, size: 11, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        value,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       if (!isMobile)
         PlutoColumn(
@@ -714,8 +828,8 @@ class _UserContentState extends State<UserContent> {
             children: [
               if (_canEdit)
                 Container(
-                  height: 20,
-                  width: 20,
+                  height: 27,
+                  width: 27,
                   decoration: BoxDecoration(
                     color: Colors.blue.shade50,
                     borderRadius: BorderRadius.circular(8),
@@ -725,8 +839,8 @@ class _UserContentState extends State<UserContent> {
                     padding: EdgeInsets.zero,
                     icon: SvgPicture.asset(
                       'images/ic_farm_edit.svg',
-                      width: 12,
-                      height: 12,
+                      width: 14,
+                      height: 14,
                       color: Colors.blue,
                     ),
 
@@ -763,8 +877,8 @@ class _UserContentState extends State<UserContent> {
               if (_canEdit && _canDelete && !isMobile) const SizedBox(width: 8),
               if (_canDelete && !isMobile)
                 Container(
-                  height: 20,
-                  width: 20,
+                  height: 27,
+                  width: 27,
                   decoration: BoxDecoration(
                     color: Colors.red.shade50,
                     borderRadius: BorderRadius.circular(8),
@@ -773,8 +887,8 @@ class _UserContentState extends State<UserContent> {
                     padding: EdgeInsets.zero,
                     icon: SvgPicture.asset(
                       'images/ic_farm_trash.svg',
-                      width: 12,
-                      height: 12,
+                      width: 14,
+                      height: 14,
                       color: Colors.red,
                     ),
                     tooltip: 'Delete User',
@@ -786,13 +900,81 @@ class _UserContentState extends State<UserContent> {
                           title: "Delete User",
                           message: "Are you sure you want to delete this user?",
                           onConfirm: () async {
-                            // Fix: Use userItemId for deletion if available
                             final String deleteId =
                                 user.rawData['userItemId']?.toString() ??
                                 user.uid;
                             await context
                                 .read<UserScreenViewModel>()
                                 .deleteUser(deleteId);
+                            if (mounted && _isGridLoaded) {
+                              _updatePlutoGridRows();
+                            }
+                          },
+                        );
+                      }
+                    },
+                  ),
+                ),
+              if (_canEdit && !isMobile) const SizedBox(width: 8),
+              if (_canEdit && !isMobile)
+                Container(
+                  height: 27,
+                  width: 27,
+                  decoration: BoxDecoration(
+                    color: user?.isUserDisabled == true ? Colors.green.shade50 : Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: Icon(
+                      user?.isUserDisabled == true ? Icons.check_circle_outline : Icons.block, 
+                      size: 14, 
+                      color: user?.isUserDisabled == true ? Colors.green : Colors.orange
+                    ),
+                    tooltip: user?.isUserDisabled == true ? 'Enable User' : 'Disable User',
+                    splashRadius: 20,
+                    onPressed: () async {
+                      if (user != null) {
+                        await showDeleteDialog(
+                          context: context,
+                          title: user.isUserDisabled ? "Enable User" : "Disable User",
+                          message: user.isUserDisabled 
+                              ? "Are you sure you want to enable this user?" 
+                              : "Are you sure you want to disable this user?",
+                          confirmText: user.isUserDisabled ? "Enable" : "Disable",
+                          showSuccessMessage: false,
+                          onConfirm: () async {
+                            final String actionId =
+                                user.rawData['userItemId']?.toString() ??
+                                user.uid;
+                            if (user.isUserDisabled) {
+                              await context
+                                  .read<UserScreenViewModel>()
+                                  .enableUser(actionId);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('User enabled successfully'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            } else {
+                              await context
+                                  .read<UserScreenViewModel>()
+                                  .disableUser(actionId);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('User disabled successfully'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            }
+                            if (mounted && _isGridLoaded) {
+                              _updatePlutoGridRows();
+                            }
                           },
                         );
                       }
@@ -1164,7 +1346,9 @@ class _UserContentState extends State<UserContent> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirm Bulk Delete'),
-        content: Text('Are you sure you want to delete ${_selectedUserIds.length} selected users?'),
+        content: Text(
+          'Are you sure you want to delete ${_selectedUserIds.length} selected users?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),

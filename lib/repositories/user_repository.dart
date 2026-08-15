@@ -21,16 +21,20 @@ class UserRepository {
       ),
     );
     final token = _authService.authToken;
+    print('[UserRepository] Creating Dio - token present: ${token != null && token.isNotEmpty}');
     if (token != null && token.isNotEmpty) {
       dio.interceptors.add(
         InterceptorsWrapper(
           onRequest: (options, handler) {
             options.headers['Authorization'] = 'Bearer $token';
             options.headers['X-Authorization'] = 'Bearer $token';
+            print('[UserRepository] Added auth headers to request: ${options.path}');
             return handler.next(options);
           },
         ),
       );
+    } else {
+      print('[UserRepository] WARNING: No token available!');
     }
     return dio;
   }
@@ -124,6 +128,33 @@ class UserRepository {
     final responseData = res.data;
     if (responseData == null || responseData['success'] != true) {
       throw Exception(responseData?['message'] ?? 'Failed to update user');
+    }
+  }
+
+  /// GET /admin/users/:id - fetch a single user by id.
+  Future<Map<String, dynamic>?> getUserById(String id) async {
+    try {
+      print('[UserRepository] Fetching user by id: $id');
+      final res = await _dio.get<Map<String, dynamic>>('/admin/users/$id');
+      final data = res.data;
+      print('[UserRepository] Response status: ${res.statusCode}');
+      print('[UserRepository] Response data keys: ${data?.keys.toList()}');
+      if (data == null) return null;
+      // Backend may return { success: true, user: {...} } or raw user object
+      if (data.containsKey('user')) {
+        final user = data['user'];
+        if (user is Map) return Map<String, dynamic>.from(user as Map<dynamic, dynamic>);
+      }
+      // If response is a raw user map
+      return Map<String, dynamic>.from(data);
+    } catch (e) {
+      print('[UserRepository] Error fetching user by id: $e');
+      if (e is DioException) {
+        print('[UserRepository] DioException statusCode: ${e.response?.statusCode}');
+        print('[UserRepository] DioException message: ${e.message}');
+        print('[UserRepository] DioException response: ${e.response?.data}');
+      }
+      return null;
     }
   }
 

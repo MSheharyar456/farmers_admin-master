@@ -17,7 +17,7 @@ class AddNotifyUserScreen extends StatefulWidget {
 
 class _AddNotifyUserScreenState extends State<AddNotifyUserScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _titleController = TextEditingController();
+  final _titleController = TextEditingController(text: 'تطبيق محصولك');
   final _messageController = TextEditingController();
   bool _isLoading = false;
   bool _isLoadingUsers = true;
@@ -149,7 +149,7 @@ class _AddNotifyUserScreenState extends State<AddNotifyUserScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text(
-              'Notification sent successfully! Users will receive it in real-time.',
+              'Notification sent successfully! Users will receive it via FCM.',
             ),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
@@ -628,7 +628,7 @@ class _AddNotifyUserScreenState extends State<AddNotifyUserScreen> {
                                               const SizedBox(width: 12),
                                               Expanded(
                                                 child: Text(
-                                                  'Socket.IO Ready',
+                                                  'Firebase FCM Ready',
                                                   style: TextStyle(
                                                     fontSize: 14,
                                                     fontWeight: FontWeight.bold,
@@ -696,7 +696,7 @@ class _AddNotifyUserScreenState extends State<AddNotifyUserScreen> {
                                                 ),
                                                 const SizedBox(height: 8),
                                                 Text(
-                                                  'Notifications will be delivered instantly via Socket.IO to connected users.',
+                                                  'Notifications will be delivered instantly via Firebase Cloud Messaging (FCM) to all users.',
                                                   style: TextStyle(
                                                     fontSize: 11,
                                                     color: Colors.grey.shade700,

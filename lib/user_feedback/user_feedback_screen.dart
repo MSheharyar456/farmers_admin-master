@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pluto_grid/pluto_grid.dart';
+import 'package:farmers_admin/widgets/loading_overlay.dart';
 
 class UserFeedbackScreen extends StatefulWidget {
   const UserFeedbackScreen({super.key});
@@ -55,15 +56,17 @@ class _FeebbackContentState extends State<FeebbackContent> {
     try {
       final service = context.read<AdminDashboardApiService>();
       final list = await service.getFeedback(limit: 200);
-      if (mounted) setState(() {
-        _feedbackList = list;
-        _loading = false;
-      });
+      if (mounted)
+        setState(() {
+          _feedbackList = list;
+          _loading = false;
+        });
     } catch (_) {
-      if (mounted) setState(() {
-        _feedbackList = [];
-        _loading = false;
-      });
+      if (mounted)
+        setState(() {
+          _feedbackList = [];
+          _loading = false;
+        });
     }
   }
 
@@ -74,7 +77,9 @@ class _FeebbackContentState extends State<FeebbackContent> {
   }
 
   List<PlutoRow> _buildRowsFromList() {
-    final filtered = _feedbackList.where((f) => _matchesFilters(f.toMap())).toList();
+    final filtered = _feedbackList
+        .where((f) => _matchesFilters(f.toMap()))
+        .toList();
     filtered.sort((a, b) => b.timestamp.compareTo(a.timestamp));
     int counter = 1;
     return filtered.map((f) {
@@ -193,7 +198,10 @@ class _FeebbackContentState extends State<FeebbackContent> {
           renderer: (rendererContext) {
             final rating = rendererContext.cell.value as int?;
             if (rating == null || rating <= 0) {
-              return const Text('-', style: TextStyle(color: Colors.grey, fontSize: 12));
+              return const Text(
+                '-',
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              );
             }
             return Row(
               mainAxisSize: MainAxisSize.min,
@@ -227,8 +235,8 @@ class _FeebbackContentState extends State<FeebbackContent> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                height: 20,
-                width: 20,
+                height: 27,
+                width: 27,
                 decoration: BoxDecoration(
                   color: Colors.blue.shade50,
                   borderRadius: BorderRadius.circular(8),
@@ -237,7 +245,7 @@ class _FeebbackContentState extends State<FeebbackContent> {
                   padding: EdgeInsets.zero,
                   icon: const Icon(
                     Icons.visibility,
-                    size: 12,
+                    size: 14,
                     color: Colors.blue,
                   ),
                   tooltip: 'View Details',
@@ -257,29 +265,38 @@ class _FeebbackContentState extends State<FeebbackContent> {
                   },
                 ),
               ),
+              const SizedBox(width: 8),
               if (feedbackMap != null && feedbackMap is Map)
                 Container(
-                  height: 20,
-                  width: 20,
+                  height: 27,
+                  width: 27,
                   decoration: BoxDecoration(
                     color: Colors.red.shade50,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: IconButton(
                     padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.delete_outline, size: 12, color: Colors.red),
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      size: 14,
+                      color: Colors.red,
+                    ),
                     tooltip: 'Delete Feedback',
                     splashRadius: 20,
                     onPressed: () async {
-                      final String? feedbackId = (feedbackMap as Map)['id']?.toString();
+                      final String? feedbackId = (feedbackMap as Map)['id']
+                          ?.toString();
                       if (feedbackId == null) return;
                       await showDeleteDialog(
                         context: context,
                         title: 'Delete Feedback',
-                        message: 'Are you sure you want to delete this feedback?',
+                        message:
+                            'Are you sure you want to delete this feedback?',
                         onConfirm: () async {
                           try {
-                            await context.read<AdminDashboardApiService>().deleteFeedback(feedbackId);
+                            await context
+                                .read<AdminDashboardApiService>()
+                                .deleteFeedback(feedbackId);
                             if (!context.mounted) return;
                             _loadFeedback();
                           } catch (_) {}
@@ -306,7 +323,8 @@ class _FeebbackContentState extends State<FeebbackContent> {
     // Fetch user auth data
     String userName = feedbackData['userName'] ?? 'Unknown User';
     String userEmail = feedbackData['userMail'] ?? 'No email';
-    String userContact = feedbackData['userContact']?.toString() ?? 'No contact';
+    String userContact =
+        feedbackData['userContact']?.toString() ?? 'No contact';
     const bool userIsVerified = false;
 
     if (!mounted) return;
@@ -525,7 +543,11 @@ class _FeebbackContentState extends State<FeebbackContent> {
                       mainAxisSize: MainAxisSize.min,
                       children: List.generate(
                         rating,
-                        (i) => const Icon(Icons.star, size: 16, color: Colors.amber),
+                        (i) => const Icon(
+                          Icons.star,
+                          size: 16,
+                          color: Colors.amber,
+                        ),
                       ),
                     )
                   : const Text(
@@ -735,20 +757,73 @@ class _FeebbackContentState extends State<FeebbackContent> {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  ElevatedButton(
-                                    onPressed: _applyFilters,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.green,
-                                      padding: const EdgeInsets.all(16),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                    ),
-                                    child: SvgPicture.asset(
-                                      'images/ic_farm_filter.svg',
-                                      height: 20,
-                                      width: 20,
-                                      color: Colors.white,
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: ElevatedButton(
+                                            onPressed: _applyFilters,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.green,
+                                              padding: const EdgeInsets.symmetric(vertical: 16),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(5),
+                                              ),
+                                            ),
+                                            child: Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    SvgPicture.asset(
+      'images/ic_farm_filter.svg',
+      height: 12,
+      width: 12,
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    ),
+    const SizedBox(width: 4),
+    const Text(
+      "APPLY",
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
+    ),
+  ],
+),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: ElevatedButton(
+                                            onPressed: () {
+                                              setState(() {
+                                                _searchController.clear();
+                                                _pendingSearchQuery = '';
+                                                _searchQuery = '';
+                                                _pendingSelectedType = null;
+                                                _selectedType = null;
+                                                _currentPage = 1;
+                                              });
+                                            },
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.red,
+                                              padding: const EdgeInsets.symmetric(vertical: 16),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(5),
+                                              ),
+                                            ),
+                                            child: const Text(
+                                              "CLEAR",
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
@@ -875,56 +950,116 @@ class _FeebbackContentState extends State<FeebbackContent> {
                               const SizedBox(width: 12),
                               Expanded(
                                 flex: 1,
-                                child: ElevatedButton(
-                                  onPressed: _applyFilters,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 20,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(5),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SvgPicture.asset(
-                                        'images/ic_farm_filter.svg',
-                                        height: 12,
-                                        width: 12,
-                                        color: Colors.white,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: _applyFilters,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.green,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 20,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(5),
+                                          ),
+                                        ),
+                                        child: Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    SvgPicture.asset(
+      'images/ic_farm_filter.svg',
+      height: 12,
+      width: 12,
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    ),
+    const SizedBox(width: 4),
+    const Text(
+      "APPLY",
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
+    ),
+  ],
+),
                                       ),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        "APPLY FILTERS",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _searchController.clear();
+                                            _pendingSearchQuery = '';
+                                            _searchQuery = '';
+                                            _pendingSelectedType = null;
+                                            _selectedType = null;
+                                            _currentPage = 1;
+                                          });
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 20,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(5),
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          "CLEAR",
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 10,
+                                          ),
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
                           ),
+
                     const SizedBox(height: 10),
                     // PlutoGrid Section
                     Builder(
                       builder: (context) {
+                        final rows = _buildRowsFromList();
+                        // Pagination logic
+                        int totalRows = rows.length;
+                        int totalPages = (totalRows / _rowsPerPage).ceil();
+                        int startIndex = (_currentPage - 1) * _rowsPerPage;
+                        int endIndex = startIndex + _rowsPerPage;
+                        if (endIndex > totalRows) endIndex = totalRows;
+
+                        final paginatedRows = rows.sublist(
+                          startIndex,
+                          endIndex,
+                        );
                         if (_loading) {
-                          return const SizedBox(
-                            height: 400,
+                          return Container(
+                            height: _loading
+                                ? 300
+                                : (paginatedRows.length * rowHeight) +
+                                      headerHeight,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                             child: Center(
-                              child: CircularProgressIndicator(color: Colors.green),
+                              child: LoadingOverlay(
+                                text: 'Loading...',
+                                showBackdrop: false,
+                              ),
                             ),
                           );
                         }
-
-                        final rows = _buildRowsFromList();
 
                         if (rows.isEmpty) {
                           return Container(
@@ -957,7 +1092,10 @@ class _FeebbackContentState extends State<FeebbackContent> {
                                     _feedbackList.isEmpty
                                         ? 'Feedback from users will appear here'
                                         : 'No feedback found matching your filters',
-                                    style: const TextStyle(fontSize: 14, color: Colors.grey),
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -965,248 +1103,71 @@ class _FeebbackContentState extends State<FeebbackContent> {
                           );
                         }
 
-                        // Pagination logic
-                        int totalRows = rows.length;
-                            int totalPages = (totalRows / _rowsPerPage).ceil();
-                            int startIndex = (_currentPage - 1) * _rowsPerPage;
-                            int endIndex = startIndex + _rowsPerPage;
-                            if (endIndex > totalRows) endIndex = totalRows;
-
-                            final paginatedRows = rows.sublist(
-                              startIndex,
-                              endIndex,
-                            );
-
-                            return Column(
-                              children: [
-                                SizedBox(
-                                  height:
-                                      (paginatedRows.length * rowHeight) +
-                                      headerHeight,
-                                  child: PlutoGrid(
-                                    columns: _getColumns(context, isMobile),
-                                    rows: paginatedRows,
-                                    onLoaded: (event) {
-                                      stateManager = event.stateManager;
-                                      stateManager.setShowColumnFilter(false);
-                                    },
-                                    configuration: PlutoGridConfiguration(
-                                      columnSize:
-                                          const PlutoGridColumnSizeConfig(
-                                            autoSizeMode:
-                                                PlutoAutoSizeMode.scale,
-                                          ),
-                                      style: PlutoGridStyleConfig(
-                                        rowHeight: 40,
-                                        columnTextStyle: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
-                                        ),
-                                        cellTextStyle: const TextStyle(
-                                          fontSize: 12,
-                                        ),
-                                        enableColumnBorderHorizontal: true,
-                                        enableCellBorderHorizontal: true,
-                                        enableColumnBorderVertical: true,
-                                        enableRowColorAnimation: false,
-                                        oddRowColor: Colors.white,
-                                        evenRowColor: Colors.grey.shade50,
-                                      ),
+                        return Column(
+                          children: [
+                            SizedBox(
+                              height:
+                                  (paginatedRows.length * rowHeight) +
+                                  headerHeight,
+                              child: PlutoGrid(
+                                columns: _getColumns(context, isMobile),
+                                rows: paginatedRows,
+                                onLoaded: (event) {
+                                  stateManager = event.stateManager;
+                                  stateManager.setShowColumnFilter(false);
+                                },
+                                configuration: PlutoGridConfiguration(
+                                  columnSize: const PlutoGridColumnSizeConfig(
+                                    autoSizeMode: PlutoAutoSizeMode.scale,
+                                  ),
+                                  style: PlutoGridStyleConfig(
+                                    rowHeight: 40,
+                                    columnTextStyle: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
                                     ),
+                                    cellTextStyle: const TextStyle(
+                                      fontSize: 12,
+                                    ),
+                                    enableColumnBorderHorizontal: true,
+                                    enableCellBorderHorizontal: true,
+                                    enableColumnBorderVertical: true,
+                                    enableRowColorAnimation: false,
+                                    oddRowColor: Colors.white,
+                                    evenRowColor: Colors.grey.shade50,
                                   ),
                                 ),
+                              ),
+                            ),
 
-                                // Responsive Pagination Footer
-                                Container(
-                                  padding: EdgeInsets.symmetric(
-                                    vertical: isMobile ? 12 : 8,
-                                    horizontal: isMobile ? 4 : 8,
+                            // Responsive Pagination Footer
+                            Container(
+                              padding: EdgeInsets.symmetric(
+                                vertical: isMobile ? 12 : 8,
+                                horizontal: isMobile ? 4 : 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.grey.withOpacity(0.05),
+                                    blurRadius: 5,
+                                    offset: const Offset(0, 2),
                                   ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(10),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.grey.withOpacity(0.05),
-                                        blurRadius: 5,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: isMobile
-                                      ? Column(
-                                          children: [
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                IconButton(
-                                                  icon: const Icon(
-                                                    Icons.arrow_back_ios_new,
-                                                    size: 14,
-                                                  ),
-                                                  onPressed: _currentPage > 1
-                                                      ? () => setState(
-                                                          () => _currentPage--,
-                                                        )
-                                                      : null,
-                                                ),
-                                                ...List.generate(
-                                                  totalPages > 5
-                                                      ? 5
-                                                      : totalPages,
-                                                  (index) {
-                                                    int pageNum = index + 1;
-                                                    bool isActive =
-                                                        pageNum == _currentPage;
-                                                    return GestureDetector(
-                                                      onTap: () => setState(
-                                                        () => _currentPage =
-                                                            pageNum,
-                                                      ),
-                                                      child: Container(
-                                                        margin:
-                                                            const EdgeInsets.symmetric(
-                                                              horizontal: 2,
-                                                            ),
-                                                        padding:
-                                                            const EdgeInsets.symmetric(
-                                                              horizontal: 10,
-                                                              vertical: 6,
-                                                            ),
-                                                        decoration: BoxDecoration(
-                                                          color: isActive
-                                                              ? const Color(
-                                                                  0xFFE8F5E9,
-                                                                )
-                                                              : Colors.white,
-                                                          border: Border.all(
-                                                            color: isActive
-                                                                ? const Color(
-                                                                    0xFF4CAF50,
-                                                                  )
-                                                                : Colors
-                                                                      .grey
-                                                                      .shade300,
-                                                          ),
-                                                          borderRadius:
-                                                              BorderRadius.circular(
-                                                                6,
-                                                              ),
-                                                        ),
-                                                        child: Text(
-                                                          '$pageNum',
-                                                          style: TextStyle(
-                                                            fontSize: 12,
-                                                            color: isActive
-                                                                ? const Color(
-                                                                    0xFF4CAF50,
-                                                                  )
-                                                                : Colors
-                                                                      .black87,
-                                                            fontWeight:
-                                                                FontWeight.w500,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    );
-                                                  },
-                                                ),
-                                                IconButton(
-                                                  icon: const Icon(
-                                                    Icons.arrow_forward_ios,
-                                                    size: 14,
-                                                  ),
-                                                  onPressed:
-                                                      _currentPage < totalPages
-                                                      ? () => setState(
-                                                          () => _currentPage++,
-                                                        )
-                                                      : null,
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                Container(
-                                                  height: 34,
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 8,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    border: Border.all(
-                                                      color:
-                                                          Colors.grey.shade300,
-                                                    ),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          6,
-                                                        ),
-                                                    color: Colors.white,
-                                                  ),
-                                                  child: DropdownButtonHideUnderline(
-                                                    child: DropdownButton<int>(
-                                                      value: _rowsPerPage,
-                                                      dropdownColor:
-                                                          Colors.white,
-                                                      icon: const Icon(
-                                                        Icons
-                                                            .keyboard_arrow_down,
-                                                        size: 14,
-                                                      ),
-                                                      items: [5, 10, 20, 50]
-                                                          .map(
-                                                            (
-                                                              e,
-                                                            ) => DropdownMenuItem(
-                                                              value: e,
-                                                              child: Text(
-                                                                '$e',
-                                                                style:
-                                                                    TextStyle(
-                                                                      fontSize:
-                                                                          12,
-                                                                    ),
-                                                              ),
-                                                            ),
-                                                          )
-                                                          .toList(),
-                                                      onChanged: (val) {
-                                                        if (val != null) {
-                                                          setState(() {
-                                                            _rowsPerPage = val;
-                                                            _currentPage = 1;
-                                                          });
-                                                        }
-                                                      },
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 6),
-                                                const Text(
-                                                  "/ Page",
-                                                  style: TextStyle(
-                                                    color: Colors.black54,
-                                                    fontSize: 12,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        )
-                                      : Row(
+                                ],
+                              ),
+                              child: isMobile
+                                  ? Column(
+                                      children: [
+                                        Row(
                                           mainAxisAlignment:
-                                              MainAxisAlignment.start,
+                                              MainAxisAlignment.center,
                                           children: [
                                             IconButton(
                                               icon: const Icon(
                                                 Icons.arrow_back_ios_new,
                                                 size: 14,
-                                                color: Colors.grey,
                                               ),
                                               onPressed: _currentPage > 1
                                                   ? () => setState(
@@ -1214,67 +1175,68 @@ class _FeebbackContentState extends State<FeebbackContent> {
                                                     )
                                                   : null,
                                             ),
-                                            ...List.generate(totalPages, (
-                                              index,
-                                            ) {
-                                              int pageNum = index + 1;
-                                              bool isActive =
-                                                  pageNum == _currentPage;
-                                              return GestureDetector(
-                                                onTap: () => setState(
-                                                  () => _currentPage = pageNum,
-                                                ),
-                                                child: Container(
-                                                  margin:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 3,
-                                                      ),
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 14,
-                                                        vertical: 8,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    color: isActive
-                                                        ? const Color(
-                                                            0xFFE8F5E9,
-                                                          )
-                                                        : Colors.white,
-                                                    border: Border.all(
-                                                      color: isActive
-                                                          ? const Color(
-                                                              0xFF4CAF50,
-                                                            )
-                                                          : Colors
-                                                                .grey
-                                                                .shade300,
-                                                    ),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          5,
+                                            ...List.generate(
+                                              totalPages > 5 ? 5 : totalPages,
+                                              (index) {
+                                                int pageNum = index + 1;
+                                                bool isActive =
+                                                    pageNum == _currentPage;
+                                                return GestureDetector(
+                                                  onTap: () => setState(
+                                                    () =>
+                                                        _currentPage = pageNum,
+                                                  ),
+                                                  child: Container(
+                                                    margin:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 2,
                                                         ),
-                                                  ),
-                                                  child: Text(
-                                                    '$pageNum',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 10,
+                                                          vertical: 6,
+                                                        ),
+                                                    decoration: BoxDecoration(
                                                       color: isActive
                                                           ? const Color(
-                                                              0xFF4CAF50,
+                                                              0xFFE8F5E9,
                                                             )
-                                                          : Colors.black87,
-                                                      fontWeight:
-                                                          FontWeight.w500,
+                                                          : Colors.white,
+                                                      border: Border.all(
+                                                        color: isActive
+                                                            ? const Color(
+                                                                0xFF4CAF50,
+                                                              )
+                                                            : Colors
+                                                                  .grey
+                                                                  .shade300,
+                                                      ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            6,
+                                                          ),
+                                                    ),
+                                                    child: Text(
+                                                      '$pageNum',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: isActive
+                                                            ? const Color(
+                                                                0xFF4CAF50,
+                                                              )
+                                                            : Colors.black87,
+                                                        fontWeight:
+                                                            FontWeight.w500,
+                                                      ),
                                                     ),
                                                   ),
-                                                ),
-                                              );
-                                            }),
+                                                );
+                                              },
+                                            ),
                                             IconButton(
                                               icon: const Icon(
                                                 Icons.arrow_forward_ios,
                                                 size: 14,
-                                                color: Colors.grey,
                                               ),
                                               onPressed:
                                                   _currentPage < totalPages
@@ -1283,78 +1245,206 @@ class _FeebbackContentState extends State<FeebbackContent> {
                                                     )
                                                   : null,
                                             ),
-                                            const SizedBox(width: 20),
-                                            Row(
-                                              children: [
-                                                Container(
-                                                  height: 34,
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 8,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    border: Border.all(
-                                                      color:
-                                                          Colors.grey.shade300,
-                                                    ),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          5,
-                                                        ),
-                                                    color: Colors.white,
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Container(
+                                              height: 34,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
                                                   ),
-                                                  child: DropdownButtonHideUnderline(
-                                                    child: DropdownButton<int>(
-                                                      value: _rowsPerPage,
-                                                      icon: const Icon(
-                                                        Icons
-                                                            .keyboard_arrow_down,
-                                                        size: 14,
-                                                      ),
-                                                      items: [5, 10, 20, 50]
-                                                          .map(
-                                                            (
-                                                              e,
-                                                            ) => DropdownMenuItem(
-                                                              value: e,
-                                                              child: Text(
-                                                                '$e',
-                                                                style:
-                                                                    TextStyle(
-                                                                      fontSize:
-                                                                          12,
-                                                                    ),
-                                                              ),
+                                              decoration: BoxDecoration(
+                                                border: Border.all(
+                                                  color: Colors.grey.shade300,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                                color: Colors.white,
+                                              ),
+                                              child: DropdownButtonHideUnderline(
+                                                child: DropdownButton<int>(
+                                                  value: _rowsPerPage,
+                                                  dropdownColor: Colors.white,
+                                                  icon: const Icon(
+                                                    Icons.keyboard_arrow_down,
+                                                    size: 14,
+                                                  ),
+                                                  items: [5, 10, 20, 50]
+                                                      .map(
+                                                        (e) => DropdownMenuItem(
+                                                          value: e,
+                                                          child: Text(
+                                                            '$e',
+                                                            style: TextStyle(
+                                                              fontSize: 12,
                                                             ),
-                                                          )
-                                                          .toList(),
-                                                      onChanged: (val) {
-                                                        if (val != null) {
-                                                          setState(() {
-                                                            _rowsPerPage = val;
-                                                            _currentPage = 1;
-                                                          });
-                                                        }
-                                                      },
-                                                    ),
-                                                  ),
+                                                          ),
+                                                        ),
+                                                      )
+                                                      .toList(),
+                                                  onChanged: (val) {
+                                                    if (val != null) {
+                                                      setState(() {
+                                                        _rowsPerPage = val;
+                                                        _currentPage = 1;
+                                                      });
+                                                    }
+                                                  },
                                                 ),
-                                                const SizedBox(width: 6),
-                                                const Text(
-                                                  "/ Page",
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.black54,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            const Text(
+                                              "/ Page",
+                                              style: TextStyle(
+                                                color: Colors.black54,
+                                                fontSize: 12,
+                                              ),
                                             ),
                                           ],
                                         ),
-                                ),
-                              ],
-                            );
+                                      ],
+                                    )
+                                  : Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.start,
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.arrow_back_ios_new,
+                                            size: 14,
+                                            color: Colors.grey,
+                                          ),
+                                          onPressed: _currentPage > 1
+                                              ? () => setState(
+                                                  () => _currentPage--,
+                                                )
+                                              : null,
+                                        ),
+                                        ...List.generate(totalPages, (index) {
+                                          int pageNum = index + 1;
+                                          bool isActive =
+                                              pageNum == _currentPage;
+                                          return GestureDetector(
+                                            onTap: () => setState(
+                                              () => _currentPage = pageNum,
+                                            ),
+                                            child: Container(
+                                              margin:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 3,
+                                                  ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 14,
+                                                    vertical: 8,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: isActive
+                                                    ? const Color(0xFFE8F5E9)
+                                                    : Colors.white,
+                                                border: Border.all(
+                                                  color: isActive
+                                                      ? const Color(0xFF4CAF50)
+                                                      : Colors.grey.shade300,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(5),
+                                              ),
+                                              child: Text(
+                                                '$pageNum',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: isActive
+                                                      ? const Color(0xFF4CAF50)
+                                                      : Colors.black87,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }),
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.arrow_forward_ios,
+                                            size: 14,
+                                            color: Colors.grey,
+                                          ),
+                                          onPressed: _currentPage < totalPages
+                                              ? () => setState(
+                                                  () => _currentPage++,
+                                                )
+                                              : null,
+                                        ),
+                                        const SizedBox(width: 20),
+                                        Row(
+                                          children: [
+                                            Container(
+                                              height: 34,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                border: Border.all(
+                                                  color: Colors.grey.shade300,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(5),
+                                                color: Colors.white,
+                                              ),
+                                              child: DropdownButtonHideUnderline(
+                                                child: DropdownButton<int>(
+                                                  value: _rowsPerPage,
+                                                  icon: const Icon(
+                                                    Icons.keyboard_arrow_down,
+                                                    size: 14,
+                                                  ),
+                                                  items: [5, 10, 20, 50]
+                                                      .map(
+                                                        (e) => DropdownMenuItem(
+                                                          value: e,
+                                                          child: Text(
+                                                            '$e',
+                                                            style: TextStyle(
+                                                              fontSize: 12,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      )
+                                                      .toList(),
+                                                  onChanged: (val) {
+                                                    if (val != null) {
+                                                      setState(() {
+                                                        _rowsPerPage = val;
+                                                        _currentPage = 1;
+                                                      });
+                                                    }
+                                                  },
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            const Text(
+                                              "/ Page",
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.black54,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ],
+                        );
                       },
                     ),
                   ],

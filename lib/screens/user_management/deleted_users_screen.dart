@@ -1,5 +1,6 @@
 // screens/user_management/deleted_users_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:provider/provider.dart';
 
@@ -9,6 +10,8 @@ import 'package:farmers_admin/services/admin_server_auth_service.dart';
 import 'package:farmers_admin/common/side_menu.dart';
 import 'package:farmers_admin/screens/user_management/deleted_user_detail_screen.dart';
 import 'package:farmers_admin/widgets/loading_overlay.dart';
+import 'package:farmers_admin/widgets/delete_dialog.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class DeletedUsersScreen extends StatefulWidget {
   const DeletedUsersScreen({super.key});
@@ -21,6 +24,9 @@ class _DeletedUsersScreenState extends State<DeletedUsersScreen> {
   late DeletedUsersApiService _apiService;
   List<DeletedUserModel> _users = [];
   bool _isLoading = false;
+  bool _isDeletingUser = false;
+  bool _isGridLoaded = false;
+  PlutoGridStateManager? _stateManager;
   String? _error;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -59,6 +65,11 @@ class _DeletedUsersScreenState extends State<DeletedUsersScreen> {
         _currentPage = 1;
         _isLoading = false;
       });
+      if (mounted && _isGridLoaded && _stateManager != null) {
+        final rows = _buildRows();
+        _stateManager!.removeAllRows();
+        if (rows.isNotEmpty) _stateManager!.appendRows(rows);
+      }
     } catch (e) {
       setState(() {
         _error = 'Failed to load deleted users: $e';
@@ -140,6 +151,59 @@ class _DeletedUsersScreenState extends State<DeletedUsersScreen> {
         });
   }
 
+  Future<void> _onDeleteUser({
+    required String userId,
+    required String userName,
+    required String userEmail,
+  }) async {
+    if (_isDeletingUser) return;
+
+    await showDeleteDialog(
+      context: context,
+      title: 'Permanently Delete User',
+      message:
+          'Are you sure you want to permanently delete "$userName" and all their data? This action cannot be undone.',
+      confirmText: 'Yes, Delete Forever',
+      cancelText: 'Cancel',
+      onConfirm: () async {
+        setState(() => _isDeletingUser = true);
+        try {
+          await _apiService.purgeDeletedUser(userId);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'User "$userName" permanently deleted successfully',
+                ),
+                backgroundColor: Colors.green,
+              ),
+            );
+            // Replace this screen with a fresh instance to fully reload the page
+            if (mounted) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (_) => const DeletedUsersScreen()),
+              );
+              return;
+            }
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to delete user: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        } finally {
+          if (mounted) {
+            setState(() => _isDeletingUser = false);
+          }
+        }
+      },
+    );
+  }
+
   List<PlutoColumn> _buildColumns() {
     return [
       PlutoColumn(
@@ -147,6 +211,13 @@ class _DeletedUsersScreenState extends State<DeletedUsersScreen> {
         field: 'no',
         type: PlutoColumnType.number(),
         width: 60,
+        enableEditingMode: false,
+      ),
+      PlutoColumn(
+        title: 'UID',
+        field: 'uid',
+        type: PlutoColumnType.text(),
+        hide: true,
         enableEditingMode: false,
       ),
       PlutoColumn(
@@ -164,12 +235,75 @@ class _DeletedUsersScreenState extends State<DeletedUsersScreen> {
         width: 200,
         enableSorting: true,
         enableFilterMenuItem: true,
+        enableEditingMode: false,
+        renderer: (rendererContext) {
+          final value = rendererContext.cell.value?.toString() ?? '';
+          return GestureDetector(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: value));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Copied: $value'),
+                  duration: const Duration(seconds: 1),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Row(
+                children: [
+                  const Icon(Icons.copy, size: 11, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      value,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
       PlutoColumn(
         title: 'Phone',
         field: 'phone',
         type: PlutoColumnType.text(),
         width: 150,
+        renderer: (rendererContext) {
+          final value = rendererContext.cell.value?.toString() ?? '';
+          return GestureDetector(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: value));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Copied: $value'),
+                  duration: const Duration(seconds: 1),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Row(
+                children: [
+                  const Icon(Icons.copy, size: 11, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      value,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
       PlutoColumn(
         title: 'Deleted Date',
@@ -189,41 +323,70 @@ class _DeletedUsersScreenState extends State<DeletedUsersScreen> {
         title: 'Actions',
         field: 'actions',
         type: PlutoColumnType.text(),
-        width: 120,
+        width: 150,
         enableSorting: false,
         enableFilterMenuItem: false,
         renderer: (rendererContext) {
           final rowData = rendererContext.row.cells;
           final userId = rowData['uid']?.value as String? ?? '';
+          final userName =
+              rowData['username']?.value as String? ?? 'Deleted user';
+          final userEmail = rowData['email']?.value as String? ?? '';
           final user = _users.firstWhere(
             (u) => u.uid == userId,
             orElse: () => _users.first,
           );
           return Align(
             alignment: Alignment.center,
-            child: Container(
-              height: 27,
-              width: 27,
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: IconButton(
-                padding: EdgeInsets.zero,
-                icon: const Icon(
-                  Icons.visibility,
-                  size: 14,
-                  color: Colors.green,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  height: 27,
+                  width: 27,
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(
+                      Icons.visibility,
+                      size: 14,
+                      color: Colors.green,
+                    ),
+                    tooltip: 'Show Details',
+                    onPressed: () => _onViewDetails(user),
+                  ),
                 ),
-                tooltip: 'Show Details',
-                onPressed: () => _onViewDetails(user),
-              ),
+                const SizedBox(width: 6),
+                Container(
+                  height: 27,
+                  width: 27,
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(
+                      Icons.delete_forever,
+                      size: 14,
+                      color: Colors.red,
+                    ),
+                    tooltip: 'Delete User',
+                    onPressed: _isDeletingUser
+                        ? null
+                        : () => _onDeleteUser(
+                            userId: userId,
+                            userName: userName,
+                            userEmail: userEmail,
+                          ),
+                  ),
+                ),
+              ],
             ),
           );
-          // TextButton(
-          //   onPressed: () => _onViewDetails(user),
-          //   child: const Text('View Details'),
-          // );
         },
       ),
     ];
@@ -319,10 +482,20 @@ class _DeletedUsersScreenState extends State<DeletedUsersScreen> {
                                     height: 16,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
+                                      color: Colors.white,
                                     ),
                                   )
                                 : const Icon(Icons.refresh),
                             label: Text(_isLoading ? 'Loading...' : 'Reload'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor:
+                                  Colors.green, // button background color
+                              foregroundColor:
+                                  Colors.white, // icon & text color
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -335,13 +508,14 @@ class _DeletedUsersScreenState extends State<DeletedUsersScreen> {
                       // ),
                       const SizedBox(height: 20),
                       _buildFilters(context, isMobile),
+                      const SizedBox(height: 10),
                       // const SizedBox(height: 10),
                       if (_isLoading && _users.isEmpty)
                         Container(
                           height: 400,
                           decoration: BoxDecoration(
                             color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(8),
                           ),
                           child: Center(
                             child: LoadingOverlay(
@@ -386,8 +560,14 @@ class _DeletedUsersScreenState extends State<DeletedUsersScreen> {
                         SizedBox(
                           height: gridHeight,
                           child: PlutoGrid(
+                            key: ValueKey('$_currentPage-$_rowsPerPage-$_searchQuery-$_selectedStatus'),
                             columns: _buildColumns(),
                             rows: _buildRows(),
+                            onLoaded: (event) {
+                              _stateManager = event.stateManager;
+                              _stateManager!.setShowColumnFilter(false);
+                              setState(() => _isGridLoaded = true);
+                            },
                             mode: PlutoGridMode.select,
                             configuration: PlutoGridConfiguration(
                               columnSize: const PlutoGridColumnSizeConfig(
@@ -434,7 +614,7 @@ class _DeletedUsersScreenState extends State<DeletedUsersScreen> {
               TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  hintText: 'Search by name, email or phone...',
+                  hintText: 'Search by name, email, or contact...',
                   prefixIcon: const Icon(Icons.search),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -490,36 +670,57 @@ class _DeletedUsersScreenState extends State<DeletedUsersScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  ElevatedButton(
-                    onPressed: _applyFilters,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 20,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.filter_alt,
-                          color: Colors.white,
-                          size: 18,
+                  Row(
+                    children: [
+                      ElevatedButton(
+                        onPressed: _applyFilters,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          "APPLY FILTERS",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        child: Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    SvgPicture.asset(
+      'images/ic_farm_filter.svg',
+      height: 12,
+      width: 12,
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    ),
+    const SizedBox(width: 4),
+    const Text(
+      "APPLY",
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
+    ),
+  ],
+),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          setState(() {
+                            _searchController.clear();
+                            _pendingSearchQuery = '';
+                            _searchQuery = '';
+                            _pendingStatus = null;
+                            _selectedStatus = null;
+                            _currentPage = 1;
+                            _applyFilters();
+                          });
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                      ],
-                    ),
+                        child: const Text("REMOVE FILTER", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -537,7 +738,7 @@ class _DeletedUsersScreenState extends State<DeletedUsersScreen> {
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: Colors.white,
-                      hintText: 'Search by name, email or phone...',
+                      hintText: 'Search by name, email, or contact...',
                       hintStyle: const TextStyle(fontSize: 12),
                       prefixIcon: const Icon(Icons.search, size: 14),
                       border: OutlineInputBorder(
@@ -613,33 +814,61 @@ class _DeletedUsersScreenState extends State<DeletedUsersScreen> {
               const SizedBox(width: 12),
               Expanded(
                 flex: 1,
-                child: ElevatedButton(
-                  onPressed: _applyFilters,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 20,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.filter_alt, color: Colors.white, size: 12),
-                      SizedBox(width: 8),
-                      Text(
-                        "APPLY FILTERS",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _applyFilters,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
                         ),
+                        child: Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    SvgPicture.asset(
+      'images/ic_farm_filter.svg',
+      height: 12,
+      width: 12,
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    ),
+    const SizedBox(width: 4),
+    const Text(
+      "APPLY",
+      style: TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
+    ),
+  ],
+),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          setState(() {
+                            _searchController.clear();
+                            _pendingSearchQuery = '';
+                            _searchQuery = '';
+                            _pendingStatus = null;
+                            _selectedStatus = null;
+                            _currentPage = 1;
+                            _applyFilters();
+                          });
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                        ),
+                        child: const Text("CLEAR", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

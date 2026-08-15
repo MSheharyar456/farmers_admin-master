@@ -128,22 +128,28 @@ class UserScreenViewModel extends ChangeNotifier {
     if (_searchQuery.isNotEmpty) {
       final userName = user.userName.toLowerCase();
       final userEmail = user.userEmail.toLowerCase();
+      final userContact = user.userContact?.toLowerCase() ?? '';
       if (!userName.contains(_searchQuery) &&
-          !userEmail.contains(_searchQuery)) {
+          !userEmail.contains(_searchQuery) &&
+          !userContact.contains(_searchQuery)) {
         return false;
       }
     }
 
     // ✅ Status filter (handles different possible data formats)
     if (_selectedStatus != null && _selectedStatus!.isNotEmpty) {
-      final isVerified =
-          user.isVerified == true ||
-          user.isVerified == 'true' ||
-          user.isVerified == '1' ||
-          user.isVerified == 1;
+      if (_selectedStatus == 'Disabled') {
+        if (!user.isUserDisabled) return false;
+      } else {
+        final isVerified =
+            user.isVerified == true ||
+            user.isVerified == 'true' ||
+            user.isVerified == '1' ||
+            user.isVerified == 1;
 
-      if (_selectedStatus == 'Verified' && !isVerified) return false;
-      if (_selectedStatus == 'Unverified' && isVerified) return false;
+        if (_selectedStatus == 'Verified' && !isVerified) return false;
+        if (_selectedStatus == 'Unverified' && isVerified) return false;
+      }
     }
 
     // 🧮 Score filter (if used)
@@ -183,10 +189,39 @@ class UserScreenViewModel extends ChangeNotifier {
     try {
       _errorMessage = null;
       await repository.deleteUser(uid);
-      _allUsers.removeWhere((user) => user.uid == uid);
+      _allUsers.removeWhere((user) {
+        final userItemId = user.rawData['userItemId']?.toString();
+        return user.uid == uid || userItemId == uid;
+      });
       _applyFilters();
     } catch (e) {
       _errorMessage = 'Failed to delete user: ${e.toString()}';
+      notifyListeners();
+    }
+  }
+
+  Future<void> disableUser(String uid) async {
+    try {
+      _errorMessage = null;
+      // We assume the backend accepts a patch request to update 'isUserDisabled' flag
+      await repository.updateUser(uid, {'isUserDisabled': true});
+      // Refresh the users list after disabling
+      await loadFromRepository();
+    } catch (e) {
+      _errorMessage = 'Failed to disable user: ${e.toString()}';
+      notifyListeners();
+    }
+  }
+
+  Future<void> enableUser(String uid) async {
+    try {
+      _errorMessage = null;
+      // We assume the backend accepts a patch request to update 'isUserDisabled' flag
+      await repository.updateUser(uid, {'isUserDisabled': false});
+      // Refresh the users list after enabling
+      await loadFromRepository();
+    } catch (e) {
+      _errorMessage = 'Failed to enable user: ${e.toString()}';
       notifyListeners();
     }
   }
@@ -195,11 +230,11 @@ class UserScreenViewModel extends ChangeNotifier {
     try {
       _errorMessage = null;
       final result = await repository.bulkDeleteUsers(userIds);
-      
+
       // Remove deleted users from local list
       _allUsers.removeWhere((user) => userIds.contains(user.uid));
       _applyFilters();
-      
+
       return result;
     } catch (e) {
       _errorMessage = 'Failed to bulk delete users: ${e.toString()}';
